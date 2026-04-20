@@ -1,0 +1,82 @@
+[
+  {
+    "id": "prod-1",
+    "name": "Wireless Headphones",
+    "description": "High-quality noise-cancelling wireless headphones with 30-hour battery life.",
+    "price": 79.99,
+    "category": "Electronics",
+    "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400",
+    "stock": 50,
+    "rating": 4.5
+  },
+  {
+    "id": "prod-2",
+    "name": "Running Sneakers",
+    "description": "Lightweight and breathable running sneakers with advanced cushioning.",
+    "price": 59.99,
+    "category": "Footwear",
+    "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400",
+    "stock": 30,
+    "rating": 4.3
+  },
+  {
+    "id": "prod-3",
+    "name": "Stainless Steel Water Bottle",
+    "description": "Insulated stainless steel water bottle that keeps drinks cold for 24 hours.",
+    "price": 24.99,
+    "category": "Sports",
+    "image": "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=400",
+    "stock": 100,
+    "rating": 4.7
+  },
+  {
+    "id": "prod-4",
+    "name": "Mechanical Keyboard",
+    "description": "Compact mechanical keyboard with RGB backlighting and tactile switches.",
+    "price": 89.99,
+    "category": "Electronics",
+    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=400",
+    "stock": 20,
+    "rating": 4.6
+  },
+  {
+    "id": "prod-5",
+    "name": "Yoga Mat",
+    "description": "Non-slip eco-friendly yoga mat with alignment lines, 6mm thick.",
+    "price": 34.99,
+    "category": "Sports",
+    "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400",
+    "stock": 60,
+    "rating": 4.4
+  },
+  {
+    "id": "prod-6",
+    "name": "Leather Wallet",
+    "description": "Slim genuine leather wallet with RFID protection and multiple card slots.",
+    "price": 29.99,
+    "category": "Accessories",
+    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=400",
+    "stock": 45,
+    "rating": 4.2
+  },
+  {
+    "id": "prod-7",
+    "name": "Smart Watch",
+    "description": "Fitness tracker smartwatch with heart rate monitor, GPS and 7-day battery.",
+    "price": 129.99,
+    "category": "Electronics",
+    "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400",
+    "stock": 25,
+    "rating": 4.8
+  },
+  {
+    "id": "prod-8",
+    "name": "Coffee Maker",
+    "description": "Programmable 12-cup coffee maker with built-in grinder and thermal carafe.",
+    "price": 69.99,
+    "category": "Kitchen",
+    "image": "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400",
+    "stock": 15,
+    "rating": 4.5
+  }
+]
