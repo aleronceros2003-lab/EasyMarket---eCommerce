@@ -1,20 +1,21 @@
 {
   "name": "easymarket-backend",
-  "version": "1.0.0",
-  "description": "EasyMarket eCommerce Backend API",
+  "version": "2.0.0",
+  "description": "API de EasyMarket (Express + MongoDB/Mongoose)",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "node --watch src/index.js",
+    "seed": "node src/seed.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "express": "^4.18.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "uuid": "^9.0.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
+    "mongoose": "^8.4.0",
+    "nodemailer": "^6.9.13",
+    "pdfkit": "^0.15.0"
   }
 }

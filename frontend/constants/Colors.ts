@@ -12,4 +12,10 @@ export const Colors = {
   textSecondary: '#6B7280',
   textMuted: '#9CA3AF',
   star: '#F59E0B',
+
+  // Nuevos tokens
+  discount: '#DC2626', // badge de oferta
+  statusPreparing: '#F59E0B',
+  statusOnTheWay: '#3B82F6',
+  statusDelivered: '#10B981',
 };

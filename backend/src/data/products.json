@@ -4,79 +4,95 @@
     "name": "Auriculares inalámbricos",
     "description": "Auriculares inalámbricos con cancelación de ruido de alta calidad y 30 horas de batería.",
     "price": 79.99,
+    "discount": 20,
     "category": "Electrónica",
     "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400",
     "stock": 50,
-    "rating": 4.5
+    "rating": 4.5,
+    "ratingCount": 12
   },
   {
     "id": "prod-2",
     "name": "Zapatillas para correr",
     "description": "Zapatillas ligeras y transpirables para correr con amortiguación avanzada.",
     "price": 59.99,
+    "discount": 0,
     "category": "Calzado",
     "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400",
     "stock": 30,
-    "rating": 4.3
+    "rating": 4.3,
+    "ratingCount": 8
   },
   {
     "id": "prod-3",
     "name": "Botella de acero inoxidable",
     "description": "Botella aislada de acero inoxidable que mantiene las bebidas frías durante 24 horas.",
     "price": 24.99,
+    "discount": 55,
     "category": "Deportes",
     "image": "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=400",
     "stock": 100,
-    "rating": 4.7
+    "rating": 4.7,
+    "ratingCount": 30
   },
   {
     "id": "prod-4",
     "name": "Teclado mecánico",
     "description": "Teclado mecánico compacto con retroiluminación RGB y switches táctiles.",
     "price": 89.99,
+    "discount": 0,
     "category": "Electrónica",
     "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=400",
     "stock": 20,
-    "rating": 4.6
+    "rating": 4.6,
+    "ratingCount": 15
   },
   {
     "id": "prod-5",
     "name": "Esterilla de yoga",
     "description": "Esterilla ecológica antideslizante con líneas de alineación, 6 mm de grosor.",
     "price": 34.99,
+    "discount": 15,
     "category": "Deportes",
     "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400",
     "stock": 60,
-    "rating": 4.4
+    "rating": 4.4,
+    "ratingCount": 10
   },
   {
     "id": "prod-6",
     "name": "Cartera de cuero",
     "description": "Cartera delgada de cuero genuino con protección RFID y múltiples ranuras para tarjetas.",
     "price": 29.99,
+    "discount": 0,
     "category": "Accesorios",
     "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=400",
     "stock": 45,
-    "rating": 4.2
+    "rating": 4.2,
+    "ratingCount": 6
   },
   {
     "id": "prod-7",
     "name": "Reloj inteligente",
     "description": "Reloj inteligente con monitor de ritmo cardíaco, GPS y batería de 7 días.",
     "price": 129.99,
+    "discount": 60,
     "category": "Electrónica",
     "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400",
     "stock": 25,
-    "rating": 4.8
+    "rating": 4.8,
+    "ratingCount": 42
   },
   {
     "id": "prod-8",
     "name": "Cafetera",
     "description": "Cafetera programable para 12 tazas con molinillo integrado y jarra térmica.",
     "price": 69.99,
+    "discount": 10,
     "category": "Cocina",
     "image": "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400",
     "stock": 15,
-    "rating": 4.5
+    "rating": 4.5,
+    "ratingCount": 9
   }
 ]

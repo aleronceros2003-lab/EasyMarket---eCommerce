@@ -35,8 +35,7 @@ export default function LoginScreen() {
       await login(email.trim().toLowerCase(), password);
       router.replace('/(tabs)');
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Error al iniciar sesión';
-      Alert.alert('Error', msg);
+      Alert.alert('Error', e instanceof Error ? e.message : 'Error al iniciar sesión');
     } finally {
       setLoading(false);
     }
@@ -44,12 +43,8 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {/* Logo / Header */}
           <View style={styles.header}>
             <View style={styles.logoBox}>
               <Ionicons name="storefront" size={40} color="#fff" />
@@ -63,7 +58,7 @@ export default function LoginScreen() {
               label="Correo electrónico"
               value={email}
               onChangeText={setEmail}
-              placeholder="you@example.com"
+              placeholder="tu@ejemplo.com"
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -77,10 +72,7 @@ export default function LoginScreen() {
                 secureTextEntry={!showPwd}
                 style={{ paddingRight: 44 }}
               />
-              <TouchableOpacity
-                style={styles.eyeBtn}
-                onPress={() => setShowPwd((v) => !v)}
-              >
+              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd((v) => !v)}>
                 <Ionicons
                   name={showPwd ? 'eye-off-outline' : 'eye-outline'}
                   size={20}
@@ -89,13 +81,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <Button
-              title="Iniciar sesión"
-              onPress={handleLogin}
-              loading={loading}
-              fullWidth
-              style={styles.submitBtn}
-            />
+            <Button title="Iniciar sesión" onPress={handleLogin} loading={loading} fullWidth style={styles.submitBtn} />
 
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
@@ -103,13 +89,9 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity
-              style={styles.registerLink}
-              onPress={() => router.replace('/auth/register')}
-            >
+            <TouchableOpacity style={styles.registerLink} onPress={() => router.replace('/auth/register')}>
               <Text style={styles.registerText}>
-                ¿No tienes una cuenta?{' '}
-                <Text style={styles.registerBold}>Crear una cuenta</Text>
+                ¿No tienes una cuenta? <Text style={styles.registerBold}>Crear una cuenta</Text>
               </Text>
             </TouchableOpacity>
           </View>
@@ -132,16 +114,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
+  title: { fontSize: 30, fontWeight: '800', color: Colors.textPrimary },
+  subtitle: { fontSize: 15, color: Colors.textSecondary, marginTop: 4 },
   form: {
     backgroundColor: Colors.surface,
     borderRadius: 20,
@@ -153,18 +127,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   passwordWrapper: { position: 'relative' },
-  eyeBtn: {
-    position: 'absolute',
-    right: 14,
-    top: 36,
-  },
+  eyeBtn: { position: 'absolute', right: 14, top: 36 },
   submitBtn: { marginTop: 8 },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-    gap: 10,
-  },
+  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 20, gap: 10 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
   dividerText: { color: Colors.textMuted, fontSize: 13 },
   registerLink: { alignItems: 'center' },

@@ -1,0 +1,100 @@
+Acá va el mapa completo del proyecto, carpeta por carpeta y archivo por archivo.
+
+## Raíz
+
+`/.gitignore` define qué no se sube a git. `README.md` es la documentación del proyecto. Las dos carpetas grandes son `backend` (el servidor/API) y `frontend` (la app móvil/web).
+
+## Backend (servidor Express + MongoDB)
+
+Es la API que corre en `localhost:3001` y habla con tu base MongoDB. El frontend le pide datos por HTTP.
+
+**Archivos sueltos:**
+- `.env` — tus secretos y configuración reales (la URI de Mongo, el `JWT_SECRET`, etc.). No se sube a git.
+- `package.json` — lista las dependencias (express, mongoose, etc.) y los comandos (`npm run dev`, `npm run seed`). `package-lock.json` fija las versiones exactas.
+
+**`src/` — el código:**
+
+- `index.js` — el punto de arranque. Carga el `.env`, conecta a MongoDB y recién ahí levanta el servidor en el puerto 3001. También maneja el cierre ordenado.
+- `app.js` — arma la aplicación Express: activa CORS y el parseo de JSON, y "engancha" cada grupo de rutas a su URL (`/api/auth`, `/api/products`, etc.). Aquí también está el `/api/health`.
+
+**`config/`** (configuración):
+- `env.js` — un único lugar que lee todas las variables de entorno (puerto, URI de Mongo, JWT, costo de envío, SMTP). Así no hay `process.env` regados por todo el código.
+- `db.js` — la función que conecta a MongoDB con Mongoose.
+
+**`models/`** (la forma de los datos en Mongo — cada archivo es una "tabla"/colección con sus campos y reglas):
+- `Product.js` — productos (nombre, precio, descuento, categoría, stock, rating). Tiene un campo calculado `finalPrice` (precio ya con descuento).
+- `User.js` — usuarios (nombre, correo, contraseña encriptada, dirección, preferencia de alertas, historial de productos vistos). Oculta la contraseña al responder.
+- `Cart.js` — el carrito de cada usuario (lista de productos y cantidades).
+- `Order.js` — pedidos (ítems, totales, método de pago, tipo de entrega, estado y su historial).
+- `Review.js` — valoraciones de un pedido entregado (estrellas al producto, al servicio y a la entrega).
+- `Coupon.js` — cupones de descuento (código, tipo, valor, mínimo de compra).
+
+**`routes/`** (definen qué hace cada URL de la API):
+- `auth.js` — registro, login, ver y editar perfil.
+- `products.js` — listar con filtros (categoría, búsqueda, precio, orden), ofertas para el carrusel, recomendaciones, detalle de un producto y registro de "vistas".
+- `cart.js` — ver carrito, agregar, cambiar cantidad, eliminar y vaciar. Devuelve también el desglose de totales.
+- `coupons.js` — listar cupones activos y validar un código contra un subtotal.
+- `orders.js` — generar el pedido (checkout), listar el historial, ver un pedido, avanzar su estado y generar la boleta PDF.
+- `reviews.js` — registrar una valoración y traer las reseñas de un producto.
+
+**`services/`** (lógica de negocio reutilizable, separada de las rutas):
+- `couponService.js` — la regla para validar un cupón (que exista, esté activo, no expirado y cumpla el mínimo).
+- `recommendationService.js` — calcula las recomendaciones según las categorías de lo que el usuario vio.
+- `pdfService.js` — dibuja la boleta electrónica en PDF.
+- `emailService.js` — envía (o simula) los correos de alertas de ofertas.
+
+**`utils/`** (herramientas pequeñas de uso general):
+- `pricing.js` — toda la matemática del dinero: precio final con descuento, descuento del cupón, costo de envío y el desglose de totales. Es el "cerebro" de los cálculos.
+- `validators.js` — valida datos de entrada (campos obligatorios, formato de correo, números válidos).
+- `ApiError.js` — una clase de error con código HTTP, para responder errores limpios (400, 401, 404, etc.).
+
+**`middleware/`** (funciones que se ejecutan entre la petición y la respuesta):
+- `auth.js` — verifica el token JWT y protege las rutas que requieren sesión.
+- `asyncHandler.js` — atrapa errores de las rutas para no repetir `try/catch` en cada una.
+- `errorHandler.js` — el manejador central de errores: traduce cualquier fallo a una respuesta JSON ordenada.
+
+**`data/`** (datos semilla, solo para poblar la base):
+- `products.json` — los 8 productos iniciales.
+- `coupons.json` — los 3 cupones de ejemplo.
+- `seed.js` (está en `src/`) — el script que toma esos JSON, llena MongoDB y reinicia los datos transaccionales. Es lo que corre `npm run seed`.
+
+## Frontend (app con Expo / React Native)
+
+Es la app que ves en el celular y en web. Usa **expo-router**, donde **las carpetas y archivos dentro de `app/` son las pantallas y la navegación** (routing basado en archivos).
+
+**Archivos sueltos:**
+- `package.json` / `package-lock.json` — dependencias y comandos de la app.
+- `app.json` — configuración de Expo (nombre, ícono, plugins).
+- `babel.config.js` — configuración del compilador (preset de Expo).
+- `tsconfig.json` — configuración de TypeScript.
+- `.npmrc` — la línea `legacy-peer-deps=true` que pusimos para que npm instalara sin conflictos.
+- `expo-env.d.ts` — tipos que genera Expo automáticamente.
+- `.gitignore` — qué no subir a git.
+
+**`app/`** (pantallas y navegación):
+- `_layout.tsx` — el contenedor raíz: envuelve toda la app con los proveedores de sesión (`AuthProvider`) y carrito (`CartProvider`), y define las rutas que no son pestañas (login, detalle de producto, detalle de pedido).
+- `(tabs)/_layout.tsx` — define la **barra inferior** de 4 pestañas (Inicio, Carrito, Pedidos, Perfil) con sus íconos y el "globito" de cantidad en el carrito.
+- `(tabs)/index.tsx` — pantalla **Inicio**: buscador, filtros (categoría, precio, orden), carrusel de ofertas y de recomendaciones, y la grilla de productos.
+- `(tabs)/cart.tsx` — **Carrito**: ítems, cupón, tipo de entrega (delivery/recojo), método de pago, totales y el botón Pagar.
+- `(tabs)/history.tsx` — **Pedidos**: lista tu historial con su estado.
+- `(tabs)/profile.tsx` — **Perfil**: editar tus datos y el interruptor de alertas por correo.
+- `auth/login.tsx` y `auth/register.tsx` — pantallas de iniciar sesión y crear cuenta.
+- `product/[id].tsx` — detalle de un producto (los corchetes significan que el `id` es dinámico). Muestra descuento, stock, cantidad, reseñas y "Agregar al carrito".
+- `order/[id].tsx` — detalle de un pedido: línea de tiempo del estado, totales, descargar boleta PDF y, si está entregado, el formulario de valoración.
+
+**`components/`** (piezas de UI reutilizables que usan varias pantallas):
+- `Button.tsx` y `Input.tsx` — botón e input con estilo propio.
+- `ProductCard.tsx` — la tarjeta de producto de la grilla (imagen, precio, descuento).
+- `ProductCarousel.tsx` — el carrusel horizontal (se usa para ofertas y recomendaciones).
+- `StarRating.tsx` — el selector de estrellas para valorar.
+
+**`context/`** (estado global compartido por toda la app):
+- `AuthContext.tsx` — guarda quién está logueado, el token, y las funciones de login/registro/logout/editar perfil.
+- `CartContext.tsx` — guarda el carrito y las funciones para agregar/quitar/actualizar; el contador que ves en la pestaña sale de aquí.
+
+**`services/`:**
+- `api.ts` — el "puente" con el backend: define todas las llamadas HTTP (auth, productos, carrito, cupones, pedidos, reseñas) y los tipos de datos. Aquí está el `API_BASE` con la IP que cambiamos.
+
+**`constants/` y `utils/`:**
+- `constants/Colors.ts` — la paleta de colores de la app.
+- `utils/format.ts` — funciones para mostrar dinero en soles, fechas en español y las etiquetas de estados/pago/entrega.

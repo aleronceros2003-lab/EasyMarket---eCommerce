@@ -1,11 +1,5 @@
 import React from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TextInputProps,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { Colors } from '../constants/Colors';
 
 interface InputProps extends TextInputProps {
@@ -28,9 +22,7 @@ export const Input: React.FC<InputProps> = ({ label, error, style, ...props }) =
 };
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 14,
-  },
+  container: { marginBottom: 14 },
   label: {
     fontSize: 14,
     fontWeight: '600',
@@ -47,12 +39,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     backgroundColor: Colors.surface,
   },
-  inputError: {
-    borderColor: Colors.danger,
-  },
-  error: {
-    color: Colors.danger,
-    fontSize: 12,
-    marginTop: 4,
-  },
+  inputError: { borderColor: Colors.danger },
+  error: { color: Colors.danger, fontSize: 12, marginTop: 4 },
 });

@@ -1,85 +1,174 @@
+'use strict';
+
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON } = require('../middleware/store');
+
+const Cart = require('../models/Cart');
+const Product = require('../models/Product');
+const Order = require('../models/Order');
+const User = require('../models/User');
 const { authenticate } = require('../middleware/auth');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const { requireFields } = require('../utils/validators');
+const { finalPrice, buildTotals } = require('../utils/pricing');
+const { validateCoupon } = require('../services/couponService');
+const { streamReceipt } = require('../services/pdfService');
 
 const router = express.Router();
 
-// POST /api/orders/checkout  — place order from current cart
-router.post('/checkout', authenticate, (req, res) => {
-  const { shippingAddress, paymentMethod = 'card' } = req.body;
+const PAYMENT_METHODS = ['card', 'cash_on_delivery'];
+const DELIVERY_TYPES = ['delivery', 'pickup'];
+const ORDER_FLOW = ['preparing', 'on_the_way', 'delivered'];
 
-  if (!shippingAddress) {
-    return res.status(400).json({ error: 'Shipping address is required' });
-  }
+// POST /api/orders/checkout
+router.post(
+  '/checkout',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const {
+      paymentMethod = 'card',
+      deliveryType = 'delivery',
+      shippingAddress,
+      pickupCenter,
+      couponCode,
+    } = req.body;
 
-  const carts = readJSON('carts.json');
-  const cart = carts.find((c) => c.userId === req.user.id);
+    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+      throw ApiError.badRequest(`Método de pago inválido. Use: ${PAYMENT_METHODS.join(', ')}`);
+    }
+    if (!DELIVERY_TYPES.includes(deliveryType)) {
+      throw ApiError.badRequest(`Tipo de entrega inválido. Use: ${DELIVERY_TYPES.join(', ')}`);
+    }
+    if (deliveryType === 'delivery') requireFields(req.body, ['shippingAddress']);
+    if (deliveryType === 'pickup') requireFields(req.body, ['pickupCenter']);
 
-  if (!cart || cart.items.length === 0) {
-    return res.status(400).json({ error: 'Cart is empty' });
-  }
+    const cart = await Cart.findOne({ userId: req.user.id });
+    if (!cart || cart.items.length === 0) throw ApiError.badRequest('El carrito está vacío');
 
-  const products = readJSON('products.json');
+    const ids = cart.items.map((i) => i.productId);
+    const products = await Product.find({ _id: { $in: ids } });
+    const byId = new Map(products.map((p) => [p._id, p]));
 
-  const orderItems = cart.items.map((item) => {
-    const product = products.find((p) => p.id === item.productId);
-    return {
-      productId: item.productId,
-      name: product ? product.name : 'Unknown Product',
-      price: product ? product.price : 0,
-      quantity: item.quantity,
-      image: product ? product.image : '',
-      subtotal: product ? parseFloat((product.price * item.quantity).toFixed(2)) : 0,
-    };
-  });
+    // Construir ítems validando stock.
+    const orderItems = cart.items.map((item) => {
+      const product = byId.get(item.productId);
+      if (!product) throw ApiError.badRequest(`Producto no disponible: ${item.productId}`);
+      if (product.stock < item.quantity) {
+        throw ApiError.badRequest(`Stock insuficiente para "${product.name}"`);
+      }
+      const unitPrice = finalPrice(product);
+      return {
+        productId: product._id,
+        name: product.name,
+        price: product.price,
+        discount: product.discount || 0,
+        finalPrice: unitPrice,
+        quantity: item.quantity,
+        image: product.image,
+        subtotal: Math.round(unitPrice * item.quantity * 100) / 100,
+      };
+    });
 
-  const total = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
+    // Totales (descuentos de producto + cupón + envío).
+    const baseTotals = buildTotals(orderItems, { deliveryType });
+    let coupon = null;
+    if (couponCode) {
+      const validated = await validateCoupon(couponCode, baseTotals.subtotal);
+      coupon = validated.coupon;
+    }
+    const totals = buildTotals(orderItems, { coupon, deliveryType });
 
-  const order = {
-    id: uuidv4(),
-    userId: req.user.id,
-    items: orderItems,
-    total: parseFloat(total.toFixed(2)),
-    shippingAddress,
-    paymentMethod,
-    status: 'confirmed',
-    createdAt: new Date().toISOString(),
-  };
+    const now = new Date();
+    const order = await Order.create({
+      userId: req.user.id,
+      items: orderItems,
+      subtotal: totals.subtotal,
+      productDiscount: totals.productDiscount,
+      couponCode: coupon ? coupon.code : null,
+      couponDiscount: totals.couponDiscount,
+      shipping: totals.shipping,
+      total: totals.total,
+      paymentMethod,
+      deliveryType,
+      shippingAddress: deliveryType === 'delivery' ? shippingAddress : null,
+      pickupCenter: deliveryType === 'pickup' ? pickupCenter : null,
+      status: 'preparing',
+      statusHistory: [{ status: 'preparing', at: now }],
+      rated: false,
+    });
 
-  const orders = readJSON('orders.json');
-  orders.push(order);
-  writeJSON('orders.json', orders);
+    // Descontar stock y vaciar carrito.
+    await Promise.all(
+      orderItems.map((item) =>
+        Product.updateOne({ _id: item.productId }, { $inc: { stock: -item.quantity } })
+      )
+    );
+    cart.items = [];
+    await cart.save();
 
-  // Clear the cart after checkout
-  const cartIndex = carts.findIndex((c) => c.userId === req.user.id);
-  if (cartIndex !== -1) {
-    carts[cartIndex].items = [];
-    writeJSON('carts.json', carts);
-  }
+    res.status(201).json(order.toJSON());
+  })
+);
 
-  res.status(201).json(order);
-});
+// GET /api/orders  — historial del usuario
+router.get(
+  '/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const orders = await Order.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    res.json(orders.map((o) => o.toJSON()));
+  })
+);
 
-// GET /api/orders  — get current user's purchase history
-router.get('/', authenticate, (req, res) => {
-  const orders = readJSON('orders.json');
-  const userOrders = orders
-    .filter((o) => o.userId === req.user.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json(userOrders);
-});
+// GET /api/orders/:id
+router.get(
+  '/:id',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!order) throw ApiError.notFound('Pedido no encontrado');
+    res.json(order.toJSON());
+  })
+);
 
-// GET /api/orders/:id  — get order detail
-router.get('/:id', authenticate, (req, res) => {
-  const orders = readJSON('orders.json');
-  const order = orders.find(
-    (o) => o.id === req.params.id && o.userId === req.user.id
-  );
-  if (!order) {
-    return res.status(404).json({ error: 'Order not found' });
-  }
-  res.json(order);
-});
+// PATCH /api/orders/:id/status  (en producción: endpoint de administración)
+router.patch(
+  '/:id/status',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { status } = req.body;
+    if (!ORDER_FLOW.includes(status)) {
+      throw ApiError.badRequest(`Estado inválido. Use: ${ORDER_FLOW.join(', ')}`);
+    }
+
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!order) throw ApiError.notFound('Pedido no encontrado');
+
+    // Solo avanzar, nunca retroceder.
+    if (ORDER_FLOW.indexOf(status) < ORDER_FLOW.indexOf(order.status)) {
+      throw ApiError.badRequest('No se puede retroceder el estado del pedido');
+    }
+    order.status = status;
+    order.statusHistory.push({ status, at: new Date() });
+    await order.save();
+
+    res.json(order.toJSON());
+  })
+);
+
+// GET /api/orders/:id/receipt  — boleta PDF
+router.get(
+  '/:id/receipt',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!order) throw ApiError.notFound('Pedido no encontrado');
+    const user = await User.findById(req.user.id);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="boleta-${order.id}.pdf"`);
+    streamReceipt(order.toJSON(), user ? user.toJSON() : {}, res);
+  })
+);
 
 module.exports = router;

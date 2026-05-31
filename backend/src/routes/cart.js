@@ -1,135 +1,137 @@
+'use strict';
+
 const express = require('express');
-const { readJSON, writeJSON } = require('../middleware/store');
+
+const Cart = require('../models/Cart');
+const Product = require('../models/Product');
 const { authenticate } = require('../middleware/auth');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const { finalPrice, buildTotals } = require('../utils/pricing');
+const { toPositiveInt } = require('../utils/validators');
 
 const router = express.Router();
 
-// Helper: get or create cart for user
-const getUserCart = (userId) => {
-  const carts = readJSON('carts.json');
-  let cart = carts.find((c) => c.userId === userId);
-  if (!cart) {
-    cart = { userId, items: [] };
-    carts.push(cart);
-    writeJSON('carts.json', carts);
-  }
-  return cart;
+/**
+ * Enriquece los ítems del carrito con datos del producto, precio final y
+ * subtotal, y devuelve también el desglose de totales.
+ * @param {{productId:string, quantity:number}[]} cartItems
+ */
+const buildCartResponse = async (cartItems) => {
+  if (cartItems.length === 0) return { items: [], totals: buildTotals([]) };
+
+  const ids = cartItems.map((i) => i.productId);
+  const products = await Product.find({ _id: { $in: ids } });
+  const byId = new Map(products.map((p) => [p._id, p]));
+
+  const items = cartItems
+    .map((item) => {
+      const product = byId.get(item.productId);
+      if (!product) return null; // producto retirado del catálogo
+      const unitPrice = finalPrice(product);
+      return {
+        productId: item.productId,
+        quantity: item.quantity,
+        product: product.toJSON(),
+        subtotal: Math.round(unitPrice * item.quantity * 100) / 100,
+      };
+    })
+    .filter(Boolean);
+
+  const pricingItems = items.map((i) => ({
+    price: i.product.price,
+    discount: i.product.discount,
+    quantity: i.quantity,
+  }));
+
+  return { items, totals: buildTotals(pricingItems) };
 };
 
-// GET /api/cart  — get current user's cart
-router.get('/', authenticate, (req, res) => {
-  const cart = getUserCart(req.user.id);
-  const products = readJSON('products.json');
+// GET /api/cart
+router.get(
+  '/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const cart = await Cart.findOne({ userId: req.user.id }).lean();
+    res.json(await buildCartResponse(cart ? cart.items : []));
+  })
+);
 
-  const enriched = cart.items.map((item) => {
-    const product = products.find((p) => p.id === item.productId);
-    return { ...item, product };
-  });
+// POST /api/cart/items
+router.post(
+  '/items',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { productId } = req.body;
+    const quantity = toPositiveInt(req.body.quantity ?? 1, { field: 'quantity' });
+    if (!productId) throw ApiError.badRequest('productId es obligatorio');
 
-  const total = enriched.reduce(
-    (sum, item) => sum + (item.product ? item.product.price * item.quantity : 0),
-    0
-  );
+    const product = await Product.findById(productId);
+    if (!product) throw ApiError.notFound('Producto no encontrado');
+    if (product.stock < quantity) {
+      throw ApiError.badRequest('Stock insuficiente para la cantidad solicitada');
+    }
 
-  res.json({ items: enriched, total: parseFloat(total.toFixed(2)) });
-});
+    let cart = await Cart.findOne({ userId: req.user.id });
+    if (!cart) cart = new Cart({ userId: req.user.id, items: [] });
 
-// POST /api/cart/items  — add item to cart
-router.post('/items', authenticate, (req, res) => {
-  const { productId, quantity = 1 } = req.body;
+    const existing = cart.items.find((i) => i.productId === productId);
+    if (existing) existing.quantity += quantity;
+    else cart.items.push({ productId, quantity });
 
-  if (!productId) {
-    return res.status(400).json({ error: 'productId is required' });
-  }
+    await cart.save();
+    res
+      .status(201)
+      .json({ message: 'Producto agregado al carrito', ...(await buildCartResponse(cart.items)) });
+  })
+);
 
-  const products = readJSON('products.json');
-  const product = products.find((p) => p.id === productId);
-  if (!product) {
-    return res.status(404).json({ error: 'Product not found' });
-  }
+// PUT /api/cart/items/:productId  (quantity 0 = eliminar)
+router.put(
+  '/items/:productId',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { productId } = req.params;
+    const { quantity } = req.body;
+    if (quantity === undefined || !Number.isInteger(quantity) || quantity < 0) {
+      throw ApiError.badRequest('Se requiere una cantidad válida (entero >= 0)');
+    }
 
-  const carts = readJSON('carts.json');
-  let cartIndex = carts.findIndex((c) => c.userId === req.user.id);
-  if (cartIndex === -1) {
-    carts.push({ userId: req.user.id, items: [] });
-    cartIndex = carts.length - 1;
-  }
+    const cart = await Cart.findOne({ userId: req.user.id });
+    if (!cart) throw ApiError.notFound('Carrito no encontrado');
+    const item = cart.items.find((i) => i.productId === productId);
+    if (!item) throw ApiError.notFound('Ítem no encontrado en el carrito');
 
-  const cart = carts[cartIndex];
-  const existingIndex = cart.items.findIndex((i) => i.productId === productId);
+    if (quantity === 0) cart.items = cart.items.filter((i) => i.productId !== productId);
+    else item.quantity = quantity;
 
-  if (existingIndex !== -1) {
-    cart.items[existingIndex].quantity += quantity;
-  } else {
-    cart.items.push({ productId, quantity });
-  }
+    await cart.save();
+    res.json({ message: 'Carrito actualizado', ...(await buildCartResponse(cart.items)) });
+  })
+);
 
-  carts[cartIndex] = cart;
-  writeJSON('carts.json', carts);
+// DELETE /api/cart/items/:productId
+router.delete(
+  '/items/:productId',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { productId } = req.params;
+    const cart = await Cart.findOne({ userId: req.user.id });
+    if (!cart) throw ApiError.notFound('Carrito no encontrado');
+    cart.items = cart.items.filter((i) => i.productId !== productId);
+    await cart.save();
+    res.json({ message: 'Producto eliminado del carrito', ...(await buildCartResponse(cart.items)) });
+  })
+);
 
-  res.json({ message: 'Item added to cart', cart: cart.items });
-});
-
-// PUT /api/cart/items/:productId  — update item quantity
-router.put('/items/:productId', authenticate, (req, res) => {
-  const { quantity } = req.body;
-  const { productId } = req.params;
-
-  if (quantity === undefined || quantity < 0) {
-    return res.status(400).json({ error: 'Valid quantity is required' });
-  }
-
-  const carts = readJSON('carts.json');
-  const cartIndex = carts.findIndex((c) => c.userId === req.user.id);
-  if (cartIndex === -1) {
-    return res.status(404).json({ error: 'Cart not found' });
-  }
-
-  const cart = carts[cartIndex];
-  const itemIndex = cart.items.findIndex((i) => i.productId === productId);
-  if (itemIndex === -1) {
-    return res.status(404).json({ error: 'Item not found in cart' });
-  }
-
-  if (quantity === 0) {
-    cart.items.splice(itemIndex, 1);
-  } else {
-    cart.items[itemIndex].quantity = quantity;
-  }
-
-  carts[cartIndex] = cart;
-  writeJSON('carts.json', carts);
-
-  res.json({ message: 'Cart updated', cart: cart.items });
-});
-
-// DELETE /api/cart/items/:productId  — remove item from cart
-router.delete('/items/:productId', authenticate, (req, res) => {
-  const { productId } = req.params;
-
-  const carts = readJSON('carts.json');
-  const cartIndex = carts.findIndex((c) => c.userId === req.user.id);
-  if (cartIndex === -1) {
-    return res.status(404).json({ error: 'Cart not found' });
-  }
-
-  const cart = carts[cartIndex];
-  cart.items = cart.items.filter((i) => i.productId !== productId);
-  carts[cartIndex] = cart;
-  writeJSON('carts.json', carts);
-
-  res.json({ message: 'Item removed from cart', cart: cart.items });
-});
-
-// DELETE /api/cart  — clear entire cart
-router.delete('/', authenticate, (req, res) => {
-  const carts = readJSON('carts.json');
-  const cartIndex = carts.findIndex((c) => c.userId === req.user.id);
-  if (cartIndex !== -1) {
-    carts[cartIndex].items = [];
-    writeJSON('carts.json', carts);
-  }
-  res.json({ message: 'Cart cleared' });
-});
+// DELETE /api/cart  — vaciar
+router.delete(
+  '/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    await Cart.updateOne({ userId: req.user.id }, { $set: { items: [] } });
+    res.json({ message: 'Carrito vaciado', ...(await buildCartResponse([])) });
+  })
+);
 
 module.exports = router;

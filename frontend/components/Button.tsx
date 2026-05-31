@@ -35,10 +35,7 @@ export const Button: React.FC<ButtonProps> = ({
     style,
   ];
 
-  const textStyle = [
-    styles.text,
-    variant === 'outline' && styles.outlineText,
-  ];
+  const textStyle = [styles.text, variant === 'outline' && styles.outlineText];
 
   return (
     <TouchableOpacity
@@ -64,32 +61,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primary: {
-    backgroundColor: Colors.primary,
-  },
-  secondary: {
-    backgroundColor: Colors.secondary,
-  },
-  outline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-  },
-  danger: {
-    backgroundColor: Colors.danger,
-  },
-  fullWidth: {
-    width: '100%',
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  text: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  outlineText: {
-    color: Colors.primary,
-  },
+  primary: { backgroundColor: Colors.primary },
+  secondary: { backgroundColor: Colors.secondary },
+  outline: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: Colors.primary },
+  danger: { backgroundColor: Colors.danger },
+  fullWidth: { width: '100%' },
+  disabled: { opacity: 0.5 },
+  text: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  outlineText: { color: Colors.primary },
 });

@@ -1,118 +1,108 @@
+'use strict';
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON } = require('../middleware/store');
-const { authenticate, JWT_SECRET } = require('../middleware/auth');
+
+const User = require('../models/User');
+const { authenticate, signToken } = require('../middleware/auth');
+const asyncHandler = require('../middleware/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const { requireFields, assertEmail } = require('../utils/validators');
+const config = require('../config/env');
 
 const router = express.Router();
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
-  const { name, email, password, phone, address } = req.body;
+router.post(
+  '/register',
+  asyncHandler(async (req, res) => {
+    const { name, email, password, phone, address, avatar, emailAlerts } = req.body;
+    requireFields(req.body, ['name', 'email', 'password']);
+    assertEmail(email);
+    if (String(password).length < 6) {
+      throw ApiError.badRequest('La contraseña debe tener al menos 6 caracteres');
+    }
 
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Name, email and password are required' });
-  }
+    const exists = await User.findOne({ email: email.toLowerCase() }).lean();
+    if (exists) throw ApiError.conflict('El correo ya está registrado');
 
-  const users = readJSON('users.json');
-  const existing = users.find((u) => u.email === email);
-  if (existing) {
-    return res.status(409).json({ error: 'Email already registered' });
-  }
+    const hashedPassword = await bcrypt.hash(password, config.bcrypt.saltRounds);
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      phone: phone || '',
+      address: address || '',
+      avatar: avatar || '',
+      emailAlerts: Boolean(emailAlerts),
+      viewedProductIds: [],
+    });
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = {
-    id: uuidv4(),
-    name,
-    email,
-    password: hashedPassword,
-    phone: phone || '',
-    address: address || '',
-    createdAt: new Date().toISOString(),
-  };
-
-  users.push(newUser);
-  writeJSON('users.json', users);
-
-  const token = jwt.sign({ id: newUser.id, email: newUser.email }, JWT_SECRET, {
-    expiresIn: '7d',
-  });
-
-  const { password: _, ...userWithoutPassword } = newUser;
-  res.status(201).json({ token, user: userWithoutPassword });
-});
+    const token = signToken(user);
+    res.status(201).json({ token, user: user.toJSON() });
+  })
+);
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+router.post(
+  '/login',
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    requireFields(req.body, ['email', 'password']);
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
+    const user = await User.findOne({ email: String(email).toLowerCase() });
 
-  const users = readJSON('users.json');
-  const user = users.find((u) => u.email === email);
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
+    // Compara siempre (exista o no el usuario) para no filtrar por tiempos.
+    const hash = user ? user.password : '$2a$10$invalidinvalidinvalidinvalidinvalidinv';
+    const valid = await bcrypt.compare(password, hash);
 
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
+    if (!user || !valid) throw ApiError.unauthorized('Credenciales inválidas');
 
-  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-    expiresIn: '7d',
-  });
-
-  const { password: _, ...userWithoutPassword } = user;
-  res.json({ token, user: userWithoutPassword });
-});
+    const token = signToken(user);
+    res.json({ token, user: user.toJSON() });
+  })
+);
 
 // GET /api/auth/profile
-router.get('/profile', authenticate, (req, res) => {
-  const users = readJSON('users.json');
-  const user = users.find((u) => u.id === req.user.id);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-  const { password: _, ...userWithoutPassword } = user;
-  res.json(userWithoutPassword);
-});
+router.get(
+  '/profile',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.id);
+    if (!user) throw ApiError.notFound('Usuario no encontrado');
+    res.json(user.toJSON());
+  })
+);
 
 // PUT /api/auth/profile
-router.put('/profile', authenticate, async (req, res) => {
-  const { name, phone, address, currentPassword, newPassword } = req.body;
+router.put(
+  '/profile',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { name, phone, address, avatar, emailAlerts, currentPassword, newPassword } = req.body;
 
-  const users = readJSON('users.json');
-  const index = users.findIndex((u) => u.id === req.user.id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'User not found' });
-  }
+    const user = await User.findById(req.user.id);
+    if (!user) throw ApiError.notFound('Usuario no encontrado');
 
-  const user = users[index];
-
-  if (newPassword) {
-    if (!currentPassword) {
-      return res.status(400).json({ error: 'Current password is required to set a new password' });
+    if (newPassword) {
+      if (String(newPassword).length < 6) {
+        throw ApiError.badRequest('La nueva contraseña debe tener al menos 6 caracteres');
+      }
+      if (!currentPassword) throw ApiError.badRequest('Debes indicar tu contraseña actual');
+      const valid = await bcrypt.compare(currentPassword, user.password);
+      if (!valid) throw ApiError.unauthorized('La contraseña actual es incorrecta');
+      user.password = await bcrypt.hash(newPassword, config.bcrypt.saltRounds);
     }
-    const valid = await bcrypt.compare(currentPassword, user.password);
-    if (!valid) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
-    }
-    user.password = await bcrypt.hash(newPassword, 10);
-  }
 
-  if (name) user.name = name;
-  if (phone !== undefined) user.phone = phone;
-  if (address !== undefined) user.address = address;
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (address !== undefined) user.address = address;
+    if (avatar !== undefined) user.avatar = avatar;
+    if (emailAlerts !== undefined) user.emailAlerts = Boolean(emailAlerts);
 
-  users[index] = user;
-  writeJSON('users.json', users);
-
-  const { password: _, ...userWithoutPassword } = user;
-  res.json(userWithoutPassword);
-});
+    await user.save();
+    res.json(user.toJSON());
+  })
+);
 
 module.exports = router;

@@ -13,10 +13,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/Button';
+import { StarRating } from '../../components/StarRating';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
-import { Product, productsApi } from '../../services/api';
+import { Product, ProductReview, productsApi, reviewsApi } from '../../services/api';
+import { formatDate, formatMoney } from '../../utils/format';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -24,37 +26,52 @@ export default function ProductDetailScreen() {
   const { addItem } = useCart();
   const { user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [qty, setQty] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
     productsApi
       .getById(id)
-      .then(setProduct)
-      .catch(() => setProduct(null))
-      .finally(() => setLoading(false));
+      .then((p) => active && setProduct(p))
+      .catch(() => active && setProduct(null))
+      .finally(() => active && setLoading(false));
+
+    reviewsApi
+      .forProduct(id)
+      .then((r) => active && setReviews(r))
+      .catch(() => active && setReviews([]));
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   const handleAddToCart = async () => {
     if (!user) {
-      Alert.alert('Se requiere inicio de sesión', 'Por favor, inicia sesión para agregar artículos a tu carrito.', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Iniciar sesión', onPress: () => router.push('/auth/login') },
-      ]);
+      Alert.alert(
+        'Se requiere inicio de sesión',
+        'Por favor, inicia sesión para agregar artículos a tu carrito.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Iniciar sesión', onPress: () => router.push('/auth/login') },
+        ]
+      );
       return;
     }
     if (!product) return;
     try {
       setAddingToCart(true);
       await addItem(product.id, qty);
-      Alert.alert('Agregado al carrito!', `${product.name} (×${qty}) agregado a tu carrito.`, [
+      Alert.alert('¡Agregado al carrito!', `${product.name} (×${qty}) agregado a tu carrito.`, [
         { text: 'Seguir comprando', style: 'cancel' },
         { text: 'Ver carrito', onPress: () => router.push('/(tabs)/cart') },
       ]);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to add item';
-      Alert.alert('Error', msg);
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo agregar el artículo');
     } finally {
       setAddingToCart(false);
     }
@@ -78,22 +95,40 @@ export default function ProductDetailScreen() {
     );
   }
 
+  const hasDiscount = product.discount > 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <Image source={{ uri: product.image }} style={styles.image} resizeMode="contain" />
+        <View>
+          <Image source={{ uri: product.image }} style={styles.image} resizeMode="contain" />
+          {hasDiscount && (
+            <View style={styles.discountBadge}>
+              <Text style={styles.discountBadgeText}>-{product.discount}%</Text>
+            </View>
+          )}
+        </View>
 
         <View style={styles.content}>
           <View style={styles.categoryRow}>
             <Text style={styles.category}>{product.category}</Text>
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={14} color={Colors.star} />
-              <Text style={styles.rating}>{product.rating}</Text>
+              <Text style={styles.rating}>
+                {product.rating} {product.ratingCount ? `(${product.ratingCount})` : ''}
+              </Text>
             </View>
           </View>
 
           <Text style={styles.name}>{product.name}</Text>
-          <Text style={styles.price}>${product.price.toFixed(2)}</Text>
+
+          <View style={styles.priceRow}>
+            <Text style={[styles.price, hasDiscount && { color: Colors.discount }]}>
+              {formatMoney(product.finalPrice)}
+            </Text>
+            {hasDiscount && <Text style={styles.oldPrice}>{formatMoney(product.price)}</Text>}
+          </View>
+
           <Text style={styles.description}>{product.description}</Text>
 
           <View style={styles.stockRow}>
@@ -112,7 +147,6 @@ export default function ProductDetailScreen() {
             </Text>
           </View>
 
-          {/* Quantity selector */}
           <View style={styles.qtySection}>
             <Text style={styles.qtyLabel}>Cantidad</Text>
             <View style={styles.qtyRow}>
@@ -136,13 +170,29 @@ export default function ProductDetailScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Reseñas */}
+          {reviews.length > 0 && (
+            <View style={styles.reviewsSection}>
+              <Text style={styles.reviewsTitle}>Reseñas ({reviews.length})</Text>
+              {reviews.slice(0, 5).map((r, idx) => (
+                <View key={idx} style={styles.reviewCard}>
+                  <View style={styles.reviewHeader}>
+                    <StarRating value={r.rating} size={14} readonly />
+                    <Text style={styles.reviewDate}>{formatDate(r.createdAt)}</Text>
+                  </View>
+                  {r.comment ? <Text style={styles.reviewComment}>{r.comment}</Text> : null}
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
 
       <View style={styles.footer}>
         <View style={styles.subtotalRow}>
           <Text style={styles.subtotalLabel}>Subtotal</Text>
-          <Text style={styles.subtotalAmount}>${(product.price * qty).toFixed(2)}</Text>
+          <Text style={styles.subtotalAmount}>{formatMoney(product.finalPrice * qty)}</Text>
         </View>
         <Button
           title="Agregar al carrito"
@@ -158,26 +208,20 @@ export default function ProductDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  errorText: { fontSize: 18, color: Colors.textSecondary, marginTop: 12 },
+  image: { width: '100%', height: 360, backgroundColor: Colors.border, alignSelf: 'center' },
+  discountBadge: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    backgroundColor: Colors.discount,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  errorText: {
-    fontSize: 18,
-    color: Colors.textSecondary,
-    marginTop: 12,
-  },
-  image: {
-    width: '100%',
-    height: 360,
-    backgroundColor: Colors.border,
-    alignSelf: 'center',
-  },
-  content: {
-    padding: 20,
-  },
+  discountBadgeText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  content: { padding: 20 },
   categoryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -191,16 +235,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  rating: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rating: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
   name: {
     fontSize: 22,
     fontWeight: '800',
@@ -208,43 +244,20 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     marginBottom: 10,
   },
-  price: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: Colors.primary,
-    marginBottom: 14,
+  priceRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginBottom: 14 },
+  price: { fontSize: 26, fontWeight: '800', color: Colors.primary },
+  oldPrice: {
+    fontSize: 17,
+    color: Colors.textMuted,
+    textDecorationLine: 'line-through',
+    marginBottom: 3,
   },
-  description: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    lineHeight: 22,
-    marginBottom: 16,
-  },
-  stockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 20,
-  },
-  stockText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  qtySection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  qtyLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  qtyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
+  description: { fontSize: 15, color: Colors.textSecondary, lineHeight: 22, marginBottom: 16 },
+  stockRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 20 },
+  stockText: { fontSize: 14, fontWeight: '600' },
+  qtySection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  qtyLabel: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   qtyBtn: {
     width: 36,
     height: 36,
@@ -261,6 +274,29 @@ const styles = StyleSheet.create({
     minWidth: 24,
     textAlign: 'center',
   },
+  reviewsSection: { marginTop: 28 },
+  reviewsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 12,
+  },
+  reviewCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  reviewDate: { fontSize: 12, color: Colors.textMuted },
+  reviewComment: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
   footer: {
     backgroundColor: Colors.surface,
     padding: 20,
@@ -268,18 +304,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
     gap: 12,
   },
-  subtotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  subtotalLabel: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-  },
-  subtotalAmount: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: Colors.primary,
-  },
+  subtotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  subtotalLabel: { fontSize: 15, color: Colors.textSecondary },
+  subtotalAmount: { fontSize: 20, fontWeight: '800', color: Colors.primary },
 });

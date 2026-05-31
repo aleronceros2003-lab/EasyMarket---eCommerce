@@ -1,21 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authApi, User } from '../services/api';
+import { authApi, RegisterPayload, UpdateProfilePayload, User } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (payload: {
-    name: string;
-    email: string;
-    password: string;
-    phone?: string;
-    address?: string;
-  }) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<void>;
   logout: () => void;
-  updateProfile: (payload: Partial<User> & { currentPassword?: string; newPassword?: string }) => Promise<void>;
+  updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -50,13 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(u);
   };
 
-  const register = async (payload: {
-    name: string;
-    email: string;
-    password: string;
-    phone?: string;
-    address?: string;
-  }) => {
+  const register = async (payload: RegisterPayload) => {
     const { token: t, user: u } = await authApi.register(payload);
     await AsyncStorage.setItem('token', t);
     setToken(t);
@@ -69,13 +57,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const updateProfile = async (payload: Partial<User> & { currentPassword?: string; newPassword?: string }) => {
+  const updateProfile = async (payload: UpdateProfilePayload) => {
     const updated = await authApi.updateProfile(payload);
     setUser(updated);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile }}>
+    <AuthContext.Provider
+      value={{ user, token, loading, login, register, logout, updateProfile }}
+    >
       {children}
     </AuthContext.Provider>
   );

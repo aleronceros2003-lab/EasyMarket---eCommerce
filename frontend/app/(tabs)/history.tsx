@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,16 +11,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Button } from '../../components/Button';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
-import { Order, ordersApi } from '../../services/api';
-import { Button } from '../../components/Button';
+import { Order, OrderStatus, ordersApi } from '../../services/api';
+import { ORDER_STATUS_LABELS, formatDate, formatMoney } from '../../utils/format';
 
-const STATUS_COLORS: Record<string, string> = {
-  confirmed: Colors.secondary,
-  shipped: Colors.primary,
-  delivered: Colors.secondary,
-  cancelled: Colors.danger,
+const STATUS_COLORS: Record<OrderStatus, string> = {
+  preparing: Colors.statusPreparing,
+  on_the_way: Colors.statusOnTheWay,
+  delivered: Colors.statusDelivered,
 };
 
 export default function HistoryScreen() {
@@ -30,35 +30,31 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     try {
-      const data = await ordersApi.getOrders();
-      setOrders(data);
+      setOrders(await ordersApi.getOrders());
     } catch {
       setOrders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    if (user) fetchOrders();
-    else setLoading(false);
   }, [user]);
+
+  // Recarga al volver a la pestaña (p. ej. tras hacer un pedido).
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders();
+    }, [fetchOrders])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchOrders();
-  };
-
-  const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
   };
 
   if (!user) {
@@ -95,22 +91,17 @@ export default function HistoryScreen() {
           >
             <View style={styles.orderHeader}>
               <View>
-                <Text style={styles.orderId}>Order #{item.id.slice(0, 8).toUpperCase()}</Text>
+                <Text style={styles.orderId}>Pedido #{item.id.slice(0, 8).toUpperCase()}</Text>
                 <Text style={styles.orderDate}>{formatDate(item.createdAt)}</Text>
               </View>
-              <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] || Colors.textMuted }]}>
-                <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] }]}>
+                <Text style={styles.statusText}>{ORDER_STATUS_LABELS[item.status]}</Text>
               </View>
             </View>
 
             <View style={styles.itemsPreview}>
               {item.items.slice(0, 3).map((oi, idx) => (
-                <Image
-                  key={idx}
-                  source={{ uri: oi.image }}
-                  style={styles.thumbImage}
-                  resizeMode="cover"
-                />
+                <Image key={idx} source={{ uri: oi.image }} style={styles.thumbImage} resizeMode="cover" />
               ))}
               {item.items.length > 3 && (
                 <View style={styles.moreItems}>
@@ -123,7 +114,7 @@ export default function HistoryScreen() {
               <Text style={styles.itemCount}>
                 {item.items.reduce((s, i) => s + i.quantity, 0)} artículos
               </Text>
-              <Text style={styles.orderTotal}>${item.total.toFixed(2)}</Text>
+              <Text style={styles.orderTotal}>{formatMoney(item.total)}</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -132,11 +123,7 @@ export default function HistoryScreen() {
             <Ionicons name="receipt-outline" size={72} color={Colors.border} />
             <Text style={styles.emptyTitle}>No hay pedidos aún</Text>
             <Text style={styles.emptySubtitle}>Tu historial de compras aparecerá aquí</Text>
-            <Button
-              title="Comenzar a comprar"
-              onPress={() => router.push('/(tabs)')}
-              style={styles.btn}
-            />
+            <Button title="Comenzar a comprar" onPress={() => router.push('/(tabs)')} style={styles.btn} />
           </View>
         }
       />
@@ -145,33 +132,12 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 6,
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: Colors.background },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary, marginTop: 16 },
+  emptySubtitle: { fontSize: 14, color: Colors.textSecondary, marginTop: 6, textAlign: 'center' },
   btn: { marginTop: 20, paddingHorizontal: 40 },
-  list: {
-    padding: 16,
-    gap: 12,
-  },
+  list: { padding: 16, gap: 12 },
   orderCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
@@ -188,37 +154,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
-  orderId: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  orderDate: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  itemsPreview: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 12,
-  },
-  thumbImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: Colors.border,
-  },
+  orderId: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  orderDate: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  statusText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  itemsPreview: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  thumbImage: { width: 48, height: 48, borderRadius: 8, backgroundColor: Colors.border },
   moreItems: {
     width: 48,
     height: 48,
@@ -229,23 +170,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  moreItemsText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  orderFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  itemCount: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  orderTotal: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: Colors.primary,
-  },
+  moreItemsText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  itemCount: { fontSize: 13, color: Colors.textSecondary },
+  orderTotal: { fontSize: 17, fontWeight: '800', color: Colors.primary },
 });

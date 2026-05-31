@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -25,6 +26,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [emailAlerts, setEmailAlerts] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -50,11 +52,11 @@ export default function RegisterScreen() {
         password,
         phone: phone.trim() || undefined,
         address: address.trim() || undefined,
+        emailAlerts,
       });
       router.replace('/(tabs)');
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Error en el registro';
-      Alert.alert('Error', msg);
+      Alert.alert('Error', e instanceof Error ? e.message : 'Error en el registro');
     } finally {
       setLoading(false);
     }
@@ -62,12 +64,8 @@ export default function RegisterScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoBox}>
               <Ionicons name="storefront" size={40} color="#fff" />
@@ -77,13 +75,7 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.form}>
-            <Input
-              label="Nombre completo *"
-              value={name}
-              onChangeText={setName}
-              placeholder="Juan Pérez"
-              error={errors.name}
-            />
+            <Input label="Nombre completo *" value={name} onChangeText={setName} placeholder="Juan Pérez" error={errors.name} />
             <Input
               label="Correo electrónico *"
               value={email}
@@ -104,40 +96,37 @@ export default function RegisterScreen() {
                 style={{ paddingRight: 44 }}
                 error={errors.password}
               />
-              <TouchableOpacity
-                style={styles.eyeBtn}
-                onPress={() => setShowPwd((v) => !v)}
-              >
-                <Ionicons
-                  name={showPwd ? 'eye-off-outline' : 'eye-outline'}
-                  size={20}
-                  color={Colors.textMuted}
-                />
+              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd((v) => !v)}>
+                <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={20} color={Colors.textMuted} />
               </TouchableOpacity>
             </View>
             <Input
               label="Teléfono (opcional)"
               value={phone}
               onChangeText={setPhone}
-              placeholder="+34 600 000 000"
+              placeholder="+51 999 000 000"
               keyboardType="phone-pad"
             />
             <Input
               label="Dirección de envío (opcional)"
               value={address}
               onChangeText={setAddress}
-              placeholder="Calle Falsa 123, Ciudad, País"
+              placeholder="Av. Siempre Viva 123, Lima"
               multiline
               numberOfLines={2}
             />
 
-            <Button
-              title="Crear cuenta"
-              onPress={handleRegister}
-              loading={loading}
-              fullWidth
-              style={styles.submitBtn}
-            />
+            <View style={styles.alertRow}>
+              <Text style={styles.alertText}>Recibir alertas de ofertas por correo</Text>
+              <Switch
+                value={emailAlerts}
+                onValueChange={setEmailAlerts}
+                trackColor={{ true: Colors.primaryLight }}
+                thumbColor={emailAlerts ? Colors.primary : undefined}
+              />
+            </View>
+
+            <Button title="Crear cuenta" onPress={handleRegister} loading={loading} fullWidth style={styles.submitBtn} />
 
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
@@ -145,13 +134,9 @@ export default function RegisterScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity
-              style={styles.loginLink}
-              onPress={() => router.replace('/auth/login')}
-            >
+            <TouchableOpacity style={styles.loginLink} onPress={() => router.replace('/auth/login')}>
               <Text style={styles.loginText}>
-                ¿Ya tienes una cuenta?{' '}
-                <Text style={styles.loginBold}>Iniciar sesión</Text>
+                ¿Ya tienes una cuenta? <Text style={styles.loginBold}>Iniciar sesión</Text>
               </Text>
             </TouchableOpacity>
           </View>
@@ -174,16 +159,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
+  title: { fontSize: 28, fontWeight: '800', color: Colors.textPrimary },
+  subtitle: { fontSize: 15, color: Colors.textSecondary, marginTop: 4 },
   form: {
     backgroundColor: Colors.surface,
     borderRadius: 20,
@@ -195,18 +172,17 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   passwordWrapper: { position: 'relative' },
-  eyeBtn: {
-    position: 'absolute',
-    right: 14,
-    top: 36,
-  },
-  submitBtn: { marginTop: 8 },
-  divider: {
+  eyeBtn: { position: 'absolute', right: 14, top: 36 },
+  alertRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 20,
-    gap: 10,
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    gap: 12,
   },
+  alertText: { flex: 1, fontSize: 14, color: Colors.textSecondary },
+  submitBtn: { marginTop: 8 },
+  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 20, gap: 10 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
   dividerText: { color: Colors.textMuted, fontSize: 13 },
   loginLink: { alignItems: 'center' },

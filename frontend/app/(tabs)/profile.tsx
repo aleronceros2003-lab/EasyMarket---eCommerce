@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -28,6 +29,7 @@ export default function ProfileScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingAlerts, setSavingAlerts] = useState(false);
 
   if (!user) {
     return (
@@ -45,7 +47,7 @@ export default function ProfileScreen() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Validation', 'Name cannot be empty');
+      Alert.alert('Validación', 'El nombre no puede estar vacío');
       return;
     }
     try {
@@ -60,12 +62,22 @@ export default function ProfileScreen() {
       setCurrentPassword('');
       setNewPassword('');
       setEditing(false);
-      Alert.alert('Success', 'Profile updated successfully');
+      Alert.alert('Listo', 'Perfil actualizado correctamente');
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Update failed';
-      Alert.alert('Error', msg);
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo actualizar');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleAlerts = async (value: boolean) => {
+    try {
+      setSavingAlerts(true);
+      await updateProfile({ emailAlerts: value });
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo actualizar la preferencia');
+    } finally {
+      setSavingAlerts(false);
     }
   };
 
@@ -84,10 +96,7 @@ export default function ProfileScreen() {
     .slice(0, 2);
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Avatar */}
         <View style={styles.avatarContainer}>
@@ -101,7 +110,7 @@ export default function ProfileScreen() {
         {/* Info card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Información de la cuenta</Text>
+            <Text style={styles.cardTitle}>Información de la cuenta</Text>
             {!editing && (
               <TouchableOpacity onPress={() => setEditing(true)} style={styles.editBtn}>
                 <Ionicons name="pencil" size={16} color={Colors.primary} />
@@ -112,12 +121,7 @@ export default function ProfileScreen() {
 
           {editing ? (
             <>
-              <Input
-                label="Nombre completo"
-                value={name}
-                onChangeText={setName}
-                placeholder="Tu nombre completo"
-              />
+              <Input label="Nombre completo" value={name} onChangeText={setName} placeholder="Tu nombre completo" />
               <Input
                 label="Teléfono"
                 value={phone}
@@ -164,28 +168,42 @@ export default function ProfileScreen() {
                   }}
                   style={styles.actionBtn}
                 />
-                <Button
-                  title="Guardar"
-                  onPress={handleSave}
-                  loading={saving}
-                  style={styles.actionBtn}
-                />
+                <Button title="Guardar" onPress={handleSave} loading={saving} style={styles.actionBtn} />
               </View>
             </>
           ) : (
             <>
-                  <ProfileRow icon="person-outline" label="Nombre" value={user.name} />
-                  <ProfileRow icon="mail-outline" label="Correo" value={user.email} />
-                  <ProfileRow icon="call-outline" label="Teléfono" value={user.phone || '—'} />
-                  <ProfileRow icon="location-outline" label="Dirección" value={user.address || '—'} />
+              <ProfileRow icon="person-outline" label="Nombre" value={user.name} />
+              <ProfileRow icon="mail-outline" label="Correo" value={user.email} />
+              <ProfileRow icon="call-outline" label="Teléfono" value={user.phone || '—'} />
+              <ProfileRow icon="location-outline" label="Dirección" value={user.address || '—'} />
             </>
           )}
         </View>
 
-        {/* Sign out */}
+        {/* Notificaciones */}
+        <View style={styles.card}>
+          <View style={styles.alertRow}>
+            <View style={styles.alertInfo}>
+              <Text style={styles.cardTitle}>Alertas de ofertas</Text>
+              <Text style={styles.alertSubtitle}>
+                Recibe por correo ofertas con más de 50% de descuento relacionadas a tus búsquedas.
+              </Text>
+            </View>
+            <Switch
+              value={Boolean(user.emailAlerts)}
+              onValueChange={toggleAlerts}
+              disabled={savingAlerts}
+              trackColor={{ true: Colors.primaryLight }}
+              thumbColor={user.emailAlerts ? Colors.primary : undefined}
+            />
+          </View>
+        </View>
+
+        {/* Cerrar sesión */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={20} color={Colors.danger} />
-                <Text style={styles.logoutText}>Cerrar sesión</Text>
+          <Ionicons name="log-out-outline" size={20} color={Colors.danger} />
+          <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -211,12 +229,7 @@ const ProfileRow = ({
 );
 
 const rowStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-    gap: 10,
-  },
+  row: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14, gap: 10 },
   icon: { marginTop: 2 },
   label: {
     fontSize: 11,
@@ -225,23 +238,12 @@ const rowStyles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  value: {
-    fontSize: 15,
-    color: Colors.textPrimary,
-    fontWeight: '500',
-    marginTop: 2,
-  },
+  value: { fontSize: 15, color: Colors.textPrimary, fontWeight: '500', marginTop: 2 },
 });
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 20, paddingBottom: 40 },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -249,25 +251,12 @@ const styles = StyleSheet.create({
     padding: 32,
     backgroundColor: Colors.background,
   },
-  guestTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginTop: 16,
-  },
-  guestSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 6,
-    textAlign: 'center',
-  },
+  guestTitle: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginTop: 16 },
+  guestSubtitle: { fontSize: 14, color: Colors.textSecondary, marginTop: 6, textAlign: 'center' },
   btn: { marginTop: 20, paddingHorizontal: 48 },
   registerLink: { marginTop: 14 },
   registerLinkText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
-  avatarContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
+  avatarContainer: { alignItems: 'center', marginBottom: 24 },
   avatar: {
     width: 88,
     height: 88,
@@ -277,21 +266,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 12,
   },
-  avatarText: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  displayName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  displayEmail: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
+  avatarText: { color: '#fff', fontSize: 28, fontWeight: '800' },
+  displayName: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
+  displayEmail: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
@@ -309,21 +286,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 18,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  editBtnText: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: 14,
-  },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  editBtnText: { color: Colors.primary, fontWeight: '600', fontSize: 14 },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '700',
@@ -331,14 +296,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 6,
   },
-  editActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  actionBtn: {
-    flex: 1,
-  },
+  editActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  actionBtn: { flex: 1 },
+  alertRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+  alertInfo: { flex: 1 },
+  alertSubtitle: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, lineHeight: 18 },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -349,9 +311,5 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.danger,
   },
-  logoutText: {
-    color: Colors.danger,
-    fontWeight: '600',
-    fontSize: 15,
-  },
+  logoutText: { color: Colors.danger, fontWeight: '600', fontSize: 15 },
 });

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,25 +15,39 @@ import {
   View,
 } from 'react-native';
 import { ProductCard } from '../../components/ProductCard';
+import { ProductCarousel } from '../../components/ProductCarousel';
 import { Colors } from '../../constants/Colors';
-import { Product, productsApi } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { Product, productsApi, SortOption } from '../../services/api';
 
-const SORT_OPTIONS = [
+const SORT_OPTIONS: { label: string; value: SortOption }[] = [
   { label: 'Por defecto', value: '' },
   { label: 'Precio ↑', value: 'price_asc' },
   { label: 'Precio ↓', value: 'price_desc' },
   { label: 'Calificación', value: 'rating' },
 ];
 
+const PRICE_RANGES: { label: string; min?: number; max?: number }[] = [
+  { label: 'Todos' },
+  { label: '< S/ 30', max: 30 },
+  { label: 'S/ 30 – 80', min: 30, max: 80 },
+  { label: '> S/ 80', min: 80 },
+];
+
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
+  const { token } = useAuth();
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [offers, setOffers] = useState<Product[]>([]);
+  const [recommendations, setRecommendations] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
-  const [sort, setSort] = useState('');
+  const [sort, setSort] = useState<SortOption>('');
+  const [priceIndex, setPriceIndex] = useState(0);
   const [error, setError] = useState('');
 
   const isWeb = Platform.OS === 'web';
@@ -42,34 +57,116 @@ export default function HomeScreen() {
   const fetchProducts = useCallback(async () => {
     try {
       setError('');
-      const [prods, cats] = await Promise.all([
+      const range = PRICE_RANGES[priceIndex];
+      const [prods, cats, offs] = await Promise.all([
         productsApi.getAll({
           category: selectedCategory || undefined,
           search: search || undefined,
           sort: sort || undefined,
+          minPrice: range.min,
+          maxPrice: range.max,
         }),
         productsApi.getCategories(),
+        productsApi.getOffers(),
       ]);
       setProducts(prods);
       setCategories(cats);
+      setOffers(offs);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to load products';
-      setError(msg);
+      setError(e instanceof Error ? e.message : 'No se pudieron cargar los productos');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedCategory, search, sort]);
+  }, [selectedCategory, search, sort, priceIndex]);
+
+  const fetchRecommendations = useCallback(async () => {
+    if (!token) {
+      setRecommendations([]);
+      return;
+    }
+    try {
+      setRecommendations(await productsApi.getRecommendations(8));
+    } catch {
+      setRecommendations([]);
+    }
+  }, [token]);
 
   useEffect(() => {
     setLoading(true);
     fetchProducts();
   }, [fetchProducts]);
 
+  // Refresca recomendaciones cada vez que se vuelve a esta pantalla,
+  // para reflejar los productos vistos recientemente.
+  useFocusEffect(
+    useCallback(() => {
+      fetchRecommendations();
+    }, [fetchRecommendations])
+  );
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchProducts();
+    fetchRecommendations();
   };
+
+  const ListHeader = (
+    <View>
+      <ProductCarousel title="🔥 Ofertas destacadas" products={offers} />
+
+      <View style={styles.filtersContainer}>
+        <Text style={styles.filterTitle}>Categorías</Text>
+        <ChipScroll isWeb={isWeb}>
+          <Chip label="Todas" active={selectedCategory === ''} onPress={() => setSelectedCategory('')} />
+          {categories.map((cat) => (
+            <Chip
+              key={cat}
+              label={cat}
+              active={selectedCategory === cat}
+              onPress={() => setSelectedCategory(cat === selectedCategory ? '' : cat)}
+            />
+          ))}
+        </ChipScroll>
+
+        <Text style={styles.filterTitle}>Precio</Text>
+        <ChipScroll isWeb={isWeb}>
+          {PRICE_RANGES.map((r, idx) => (
+            <Chip
+              key={r.label}
+              label={r.label}
+              active={priceIndex === idx}
+              onPress={() => setPriceIndex(idx)}
+            />
+          ))}
+        </ChipScroll>
+
+        <Text style={styles.filterTitle}>Ordenar por</Text>
+        <ChipScroll isWeb={isWeb}>
+          {SORT_OPTIONS.map((opt) => (
+            <Chip
+              key={opt.value}
+              label={opt.label}
+              variant="sort"
+              active={sort === opt.value}
+              onPress={() => setSort(opt.value)}
+            />
+          ))}
+        </ChipScroll>
+      </View>
+
+      {recommendations.length > 0 && (
+        <ProductCarousel title="Recomendado para ti" products={recommendations} />
+      )}
+
+      {error ? (
+        <View style={styles.errorBox}>
+          <Ionicons name="alert-circle" size={20} color={Colors.danger} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 
   if (loading) {
     return (
@@ -82,7 +179,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Search bar */}
+      {/* Barra de búsqueda fija */}
       <View style={styles.searchRow}>
         <Ionicons name="search" size={18} color={Colors.textMuted} style={styles.searchIcon} />
         <TextInput
@@ -100,108 +197,12 @@ export default function HomeScreen() {
         )}
       </View>
 
-      <View style={styles.filtersContainer}>
-        <Text style={styles.filterTitle}>Categorías</Text>
-        {isWeb ? (
-          <View style={styles.wrapRow}>
-            <TouchableOpacity
-              style={[styles.chip, selectedCategory === '' && styles.chipActive]}
-              onPress={() => setSelectedCategory('')}
-            >
-              <Text style={[styles.chipText, selectedCategory === '' && styles.chipTextActive]}>
-                Todas
-              </Text>
-            </TouchableOpacity>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.chip, selectedCategory === cat && styles.chipActive]}
-                onPress={() => setSelectedCategory(cat === selectedCategory ? '' : cat)}
-              >
-                <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroll}
-            contentContainerStyle={styles.categoryContent}
-          >
-            <TouchableOpacity
-              style={[styles.chip, selectedCategory === '' && styles.chipActive]}
-              onPress={() => setSelectedCategory('')}
-            >
-              <Text style={[styles.chipText, selectedCategory === '' && styles.chipTextActive]}>
-                Todas
-              </Text>
-            </TouchableOpacity>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.chip, selectedCategory === cat && styles.chipActive]}
-                onPress={() => setSelectedCategory(cat === selectedCategory ? '' : cat)}
-              >
-                <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-
-        <Text style={styles.filterTitle}>Ordenar por</Text>
-        {isWeb ? (
-          <View style={styles.wrapRow}>
-            {SORT_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.sortChip, sort === opt.value && styles.sortChipActive]}
-                onPress={() => setSort(opt.value)}
-              >
-                <Text style={[styles.sortChipText, sort === opt.value && styles.sortChipTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.sortScroll}
-            contentContainerStyle={styles.sortContent}
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.sortChip, sort === opt.value && styles.sortChipActive]}
-                onPress={() => setSort(opt.value)}
-              >
-                <Text style={[styles.sortChipText, sort === opt.value && styles.sortChipTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-      </View>
-
-      {error ? (
-        <View style={styles.errorBox}>
-          <Ionicons name="alert-circle" size={20} color={Colors.danger} />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : null}
-
       <FlatList
         key={`products-${numColumns}`}
         data={products}
         keyExtractor={(item) => item.id}
         numColumns={numColumns}
+        ListHeaderComponent={ListHeader}
         renderItem={({ item }) => (
           <View style={numColumns > 1 ? styles.gridItem : undefined}>
             <ProductCard product={item} compact={numColumns > 1} />
@@ -213,7 +214,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
-          <View style={styles.centered}>
+          <View style={styles.empty}>
             <Ionicons name="search" size={48} color={Colors.border} />
             <Text style={styles.emptyText}>No se encontraron productos</Text>
           </View>
@@ -223,22 +224,55 @@ export default function HomeScreen() {
   );
 }
 
+// --- Subcomponentes de UI ---
+
+const Chip = ({
+  label,
+  active,
+  onPress,
+  variant = 'category',
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  variant?: 'category' | 'sort';
+}) => (
+  <TouchableOpacity
+    style={[
+      variant === 'sort' ? styles.sortChip : styles.chip,
+      active && (variant === 'sort' ? styles.sortChipActive : styles.chipActive),
+    ]}
+    onPress={onPress}
+  >
+    <Text
+      style={[
+        variant === 'sort' ? styles.sortChipText : styles.chipText,
+        active && (variant === 'sort' ? styles.sortChipTextActive : styles.chipTextActive),
+      ]}
+    >
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
+const ChipScroll = ({ children, isWeb }: { children: React.ReactNode; isWeb: boolean }) =>
+  isWeb ? (
+    <View style={styles.wrapRow}>{children}</View>
+  ) : (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.chipScrollContent}
+    >
+      {children}
+    </ScrollView>
+  );
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  loadingText: {
-    marginTop: 12,
-    color: Colors.textSecondary,
-    fontSize: 15,
-  },
+  container: { flex: 1, backgroundColor: Colors.background },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  empty: { alignItems: 'center', justifyContent: 'center', padding: 32 },
+  loadingText: { marginTop: 12, color: Colors.textSecondary, fontSize: 15 },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -249,21 +283,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: Colors.textPrimary,
-  },
-  filtersContainer: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingVertical: 8,
-    gap: 8,
-  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: Colors.textPrimary },
+  filtersContainer: { marginHorizontal: 16, marginBottom: 8, gap: 8 },
   filterTitle: {
     fontSize: 12,
     fontWeight: '700',
@@ -271,18 +293,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
-  wrapRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  categoryScroll: {
-    marginBottom: 2,
-  },
-  categoryContent: {
-    paddingVertical: 2,
-    gap: 8,
-  },
+  wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chipScrollContent: { paddingVertical: 2, gap: 8 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -291,25 +303,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  chipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  chipText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-  chipTextActive: {
-    color: '#fff',
-  },
-  sortScroll: {
-    marginVertical: 2,
-  },
-  sortContent: {
-    paddingVertical: 2,
-    gap: 8,
-  },
+  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  chipTextActive: { color: '#fff' },
   sortChip: {
     paddingHorizontal: 12,
     paddingVertical: 4,
@@ -318,51 +314,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  sortChipActive: {
-    backgroundColor: Colors.primaryLight,
-    borderColor: Colors.primaryLight,
-  },
-  sortChipText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-  sortChipTextActive: {
-    color: '#fff',
-  },
-  list: {
-    width: '100%',
-    alignSelf: 'center',
-    padding: 16,
-    paddingTop: 4,
-  },
-  listWrapper: {
-    flex: 1,
-  },
-  gridRow: {
-    gap: 12,
-  },
-  gridItem: {
-    flex: 1,
-    minWidth: 0,
-  },
+  sortChipActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryLight },
+  sortChipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  sortChipTextActive: { color: '#fff' },
+  list: { width: '100%', alignSelf: 'center', padding: 16, paddingTop: 4 },
+  listWrapper: { flex: 1 },
+  gridRow: { gap: 12 },
+  gridItem: { flex: 1, minWidth: 0 },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FEF2F2',
-    margin: 16,
+    marginHorizontal: 16,
+    marginBottom: 8,
     padding: 12,
     borderRadius: 10,
     gap: 8,
   },
-  errorText: {
-    color: Colors.danger,
-    fontSize: 14,
-    flex: 1,
-  },
-  emptyText: {
-    marginTop: 12,
-    color: Colors.textMuted,
-    fontSize: 16,
-  },
+  errorText: { color: Colors.danger, fontSize: 14, flex: 1 },
+  emptyText: { marginTop: 12, color: Colors.textMuted, fontSize: 16 },
 });

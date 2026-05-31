@@ -1,0 +1,5 @@
+[
+  { "code": "BIENVENIDO10", "type": "percentage", "value": 10, "minPurchase": 0, "active": true, "expiresAt": null },
+  { "code": "MENOS20", "type": "fixed", "value": 20, "minPurchase": 100, "active": true, "expiresAt": null },
+  { "code": "ENVIOGRATIS", "type": "shipping", "value": 0, "minPurchase": 0, "active": true, "expiresAt": null }
+]
