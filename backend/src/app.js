@@ -10,6 +10,11 @@ const orderRoutes = require('./routes/orders');
 const couponRoutes = require('./routes/coupons');
 const reviewRoutes = require('./routes/reviews');
 const configRoutes = require('./routes/config');
+const adminRoutes = require('./routes/admin');
+const recommendationsRoutes = require('./routes/recommendations');
+const wishlistRoutes = require('./routes/wishlist');
+const pointsRoutes = require('./routes/points');
+const notificationsRoutes = require('./routes/notifications');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -25,6 +30,11 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/config', configRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/recommendations', recommendationsRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/points', pointsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

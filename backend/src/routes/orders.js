@@ -13,6 +13,8 @@ const { requireFields } = require('../utils/validators');
 const { finalPrice, buildTotals } = require('../utils/pricing');
 const { validateCoupon } = require('../services/couponService');
 const { streamReceipt } = require('../services/pdfService');
+const { sendPushNotification } = require('../services/pushService');
+const stockEmitter = require('../services/stockEmitter');
 
 const router = express.Router();
 
@@ -97,14 +99,32 @@ router.post(
       rated: false,
     });
 
-    // Descontar stock y vaciar carrito.
+    // Descontar stock, emitir eventos de stock y vaciar carrito.
     await Promise.all(
-      orderItems.map((item) =>
-        Product.updateOne({ _id: item.productId }, { $inc: { stock: -item.quantity } })
-      )
+      orderItems.map(async (item) => {
+        const updated = await Product.findByIdAndUpdate(
+          item.productId,
+          { $inc: { stock: -item.quantity } },
+          { new: true }
+        );
+        if (updated) stockEmitter.emit('stock_update', { productId: item.productId, stock: updated.stock });
+      })
     );
     cart.items = [];
     await cart.save();
+
+    // Sumar puntos al usuario (10 puntos por cada sol gastado).
+    const earnedPoints = Math.floor(order.total * 10);
+    await User.findByIdAndUpdate(req.user.id, {
+      $inc: { points: earnedPoints },
+      $push: {
+        pointsHistory: {
+          amount: earnedPoints,
+          reason: `Compra #${order._id.toString().slice(-6)}`,
+          createdAt: new Date(),
+        },
+      },
+    });
 
     res.status(201).json(order.toJSON());
   })
@@ -131,7 +151,7 @@ router.get(
   })
 );
 
-// PATCH /api/orders/:id/status  (en producción: endpoint de administración)
+// PATCH /api/orders/:id/status  (simulación de avance de estado para el usuario)
 router.patch(
   '/:id/status',
   authenticate,
@@ -144,13 +164,24 @@ router.patch(
     const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
     if (!order) throw ApiError.notFound('Pedido no encontrado');
 
-    // Solo avanzar, nunca retroceder.
     if (ORDER_FLOW.indexOf(status) < ORDER_FLOW.indexOf(order.status)) {
       throw ApiError.badRequest('No se puede retroceder el estado del pedido');
     }
     order.status = status;
     order.statusHistory.push({ status, at: new Date() });
     await order.save();
+
+    // Push notification al usuario
+    const pushMessages = {
+      on_the_way: { title: '🚴 Tu pedido está en camino', body: 'El repartidor ya salió con tu pedido.' },
+      delivered: { title: '✅ Pedido entregado', body: '¡Tu pedido llegó! No olvides calificarlo.' },
+    };
+    if (pushMessages[status]) {
+      const usr = await User.findById(req.user.id).select('pushToken');
+      if (usr?.pushToken) {
+        sendPushNotification(usr.pushToken, pushMessages[status].title, pushMessages[status].body, { orderId: order.id });
+      }
+    }
 
     res.json(order.toJSON());
   })

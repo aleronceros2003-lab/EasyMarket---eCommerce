@@ -1,6 +1,20 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authApi, RegisterPayload, UpdateProfilePayload, User } from '../services/api';
+import { Platform } from 'react-native';
+import { authApi, notificationsApi, RegisterPayload, UpdateProfilePayload, User } from '../services/api';
+
+async function tryRegisterPushToken(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    const Notifications = await import('expo-notifications');
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') return;
+    const tokenData = await Notifications.getExpoPushTokenAsync();
+    await notificationsApi.registerToken(tokenData.data);
+  } catch {
+    // Push token is non-critical — ignore failures
+  }
+}
 
 interface AuthContextType {
   user: User | null;
@@ -27,6 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setToken(storedToken);
           const profile = await authApi.getProfile();
           setUser(profile);
+          tryRegisterPushToken();
         }
       } catch {
         await AsyncStorage.removeItem('token');
@@ -42,6 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await AsyncStorage.setItem('token', t);
     setToken(t);
     setUser(u);
+    tryRegisterPushToken();
   };
 
   const register = async (payload: RegisterPayload) => {
@@ -49,6 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await AsyncStorage.setItem('token', t);
     setToken(t);
     setUser(u);
+    tryRegisterPushToken();
   };
 
   const logout = async () => {

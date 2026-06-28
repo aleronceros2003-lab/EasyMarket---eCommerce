@@ -20,6 +20,7 @@ const getApiBase = (): string => {
 };
 
 const API_BASE = getApiBase();
+export const API_SOCKET_BASE = API_BASE.replace('/api', '');
 
 const getToken = (): Promise<string | null> => AsyncStorage.getItem('token');
 
@@ -80,8 +81,15 @@ export const authApi = {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
+export interface PickupCenter {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
 export const configApi = {
-  getPickupCenters: () => request<string[]>('GET', '/config/pickup-centers'),
+  getPickupCenters: () => request<PickupCenter[]>('GET', '/config/pickup-centers'),
   getShipping: () => request<{ deliveryCost: number; freeShippingThreshold: number }>('GET', '/config/shipping'),
 };
 
@@ -189,6 +197,9 @@ export interface User {
   emailAlerts?: boolean;
   viewedProductIds?: string[];
   paymentMethods?: PaymentMethodSaved[];
+  role?: 'user' | 'admin';
+  points?: number;
+  wishlist?: string[];
   createdAt: string;
 }
 
@@ -364,4 +375,78 @@ export interface ProductReview {
   rating: number;
   comment: string;
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Wishlist
+// ---------------------------------------------------------------------------
+export const wishlistApi = {
+  get: () => request<Product[]>('GET', '/wishlist', undefined, true),
+  add: (productId: string) => request<Product[]>('POST', `/wishlist/${productId}`, undefined, true),
+  remove: (productId: string) => request<Product[]>('DELETE', `/wishlist/${productId}`, undefined, true),
+};
+
+// ---------------------------------------------------------------------------
+// Recomendaciones
+// ---------------------------------------------------------------------------
+export const recommendationsApi = {
+  get: () => request<Product[]>('GET', '/recommendations', undefined, true),
+};
+
+// ---------------------------------------------------------------------------
+// Puntos
+// ---------------------------------------------------------------------------
+export const pointsApi = {
+  get: () => request<{ points: number; history: PointsHistoryItem[] }>('GET', '/points', undefined, true),
+  redeem: (points: number) => request<{ discount: number; remainingPoints: number }>('POST', '/points/redeem', { points }, true),
+};
+
+// ---------------------------------------------------------------------------
+// Notificaciones push
+// ---------------------------------------------------------------------------
+export const notificationsApi = {
+  registerToken: (token: string) => request<void>('POST', '/notifications/token', { token }, true),
+};
+
+// ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
+export const adminApi = {
+  getStats: () => request<AdminStats>('GET', '/admin/stats', undefined, true),
+  getOrders: (params?: { status?: string; page?: number }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+    ).toString();
+    return request<{ orders: Order[]; total: number }>('GET', `/admin/orders${qs ? `?${qs}` : ''}`, undefined, true);
+  },
+  updateOrderStatus: (id: string, status: string) =>
+    request<Order>('PATCH', `/admin/orders/${id}/status`, { status }, true),
+  getUsers: (page = 1) =>
+    request<{ users: User[]; total: number }>('GET', `/admin/users?page=${page}`, undefined, true),
+  updateUserRole: (id: string, role: 'user' | 'admin') =>
+    request<User>('PATCH', `/admin/users/${id}/role`, { role }, true),
+  getProducts: () => request<Product[]>('GET', '/admin/products', undefined, true),
+  createProduct: (data: Partial<Product>) => request<Product>('POST', '/admin/products', data, true),
+  updateProduct: (id: string, data: Partial<Product>) => request<Product>('PUT', `/admin/products/${id}`, data, true),
+  deleteProduct: (id: string) => request<void>('DELETE', `/admin/products/${id}`, undefined, true),
+};
+
+// ---------------------------------------------------------------------------
+// Tipos adicionales
+// ---------------------------------------------------------------------------
+export interface PointsHistoryItem {
+  amount: number;
+  reason: string;
+  createdAt: string;
+}
+
+export interface AdminStats {
+  totalUsers: number;
+  totalOrders: number;
+  totalRevenue: number;
+  totalProducts: number;
+  ordersByStatus: Record<string, number>;
+  recentOrders: Order[];
+  topProducts: { productId: string; name: string; image: string; totalSold: number }[];
+  revenueByDay: { date: string; revenue: number }[];
 }

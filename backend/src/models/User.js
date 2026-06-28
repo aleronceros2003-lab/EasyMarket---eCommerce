@@ -32,6 +32,19 @@ const userSchema = new Schema(
     emailAlerts: { type: Boolean, default: false },
     viewedProductIds: { type: [String], default: [] },
     paymentMethods: { type: [paymentMethodSchema], default: [] },
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    points: { type: Number, default: 0 },
+    pointsHistory: {
+      type: [
+        new Schema(
+          { amount: Number, reason: String, createdAt: { type: Date, default: Date.now } },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+    pushToken: { type: String, default: '' },
+    wishlist: { type: [String], default: [] },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },

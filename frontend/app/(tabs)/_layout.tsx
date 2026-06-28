@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { Colors } from '../../constants/Colors';
 
@@ -20,6 +21,9 @@ function CartTabIcon({ color, focused }: { color: string; focused: boolean }) {
 }
 
 export default function TabsLayout() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   return (
     <Tabs
       screenOptions={{
@@ -57,6 +61,16 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="wishlist"
+        options={{
+          title: 'Favoritos',
+          tabBarLabel: 'Favoritos',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="history"
         options={{
           title: 'Mis Pedidos',
@@ -73,6 +87,17 @@ export default function TabsLayout() {
           tabBarLabel: 'Perfil',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: 'Admin',
+          tabBarLabel: 'Admin',
+          tabBarItemStyle: isAdmin ? undefined : { display: 'none' },
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={24} color={color} />
           ),
         }}
       />

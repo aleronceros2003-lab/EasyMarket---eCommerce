@@ -19,16 +19,19 @@ import { PaymentGateway } from '../../components/PaymentGateway';
 import { Colors, Gradients } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
+import * as Location from 'expo-location';
 import {
   AddPaymentMethodPayload,
   CouponValidation,
   DeliveryType,
   PaymentMethod,
   PaymentMethodSaved,
+  PickupCenter,
   authApi,
   configApi,
   couponsApi,
   ordersApi,
+  pointsApi,
 } from '../../services/api';
 import { formatMoney } from '../../utils/format';
 
@@ -41,8 +44,9 @@ export default function CartScreen() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [deliveryType, setDeliveryType] = useState<DeliveryType>('delivery');
   const [address, setAddress] = useState(user?.address ?? '');
-  const [pickupCenter, setPickupCenter] = useState('');
-  const [pickupCenters, setPickupCenters] = useState<string[]>([]);
+  const [pickupCenters, setPickupCenters] = useState<PickupCenter[]>([]);
+  const [pickupCenter, setPickupCenter] = useState<PickupCenter | null>(null);
+  const [locating, setLocating] = useState(false);
   const [savedCards, setSavedCards] = useState<PaymentMethodSaved[]>([]);
   const [showGateway, setShowGateway] = useState(false);
 
@@ -51,7 +55,11 @@ export default function CartScreen() {
   const [couponError, setCouponError] = useState('');
   const [validatingCoupon, setValidatingCoupon] = useState(false);
 
-  // Cargar centros de recojo y tarjetas guardadas desde la API
+  const [availablePoints, setAvailablePoints] = useState(0);
+  const [pointsInput, setPointsInput] = useState('');
+  const [pointsDiscount, setPointsDiscount] = useState(0);
+  const [redeemingPoints, setRedeemingPoints] = useState(false);
+
   useEffect(() => {
     configApi.getPickupCenters().then((centers) => {
       setPickupCenters(centers);
@@ -60,16 +68,41 @@ export default function CartScreen() {
 
     if (user) {
       authApi.getPaymentMethods().then(setSavedCards).catch(() => {});
+      pointsApi.get().then((res) => setAvailablePoints(res.points)).catch(() => {});
     }
   }, [user]);
+
+  const handleFindNearest = async () => {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Activa el permiso de ubicación para encontrar la tienda más cercana.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = pos.coords;
+      const nearest = pickupCenters.reduce((best, center) => {
+        const dist = Math.hypot(center.lat - latitude, center.lng - longitude);
+        const bestDist = Math.hypot(best.lat - latitude, best.lng - longitude);
+        return dist < bestDist ? center : best;
+      });
+      setPickupCenter(nearest);
+      Alert.alert('Tienda más cercana', `${nearest.name}\n${nearest.address}`);
+    } catch {
+      Alert.alert('Error', 'No se pudo obtener tu ubicación.');
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const totals = useMemo(() => {
     const { subtotal, productDiscount, shipping: deliveryShipping } = cart.totals;
     const couponDiscount = coupon?.discount ?? 0;
     const shipping = deliveryType === 'pickup' || coupon?.type === 'shipping' ? 0 : deliveryShipping;
-    const total = Math.max(0, subtotal - couponDiscount) + shipping;
-    return { subtotal, productDiscount, couponDiscount, shipping, total };
-  }, [cart.totals, coupon, deliveryType]);
+    const total = Math.max(0, subtotal - couponDiscount - pointsDiscount) + shipping;
+    return { subtotal, productDiscount, couponDiscount, pointsDiscount, shipping, total };
+  }, [cart.totals, coupon, deliveryType, pointsDiscount]);
 
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return;
@@ -92,12 +125,34 @@ export default function CartScreen() {
     setCouponError('');
   };
 
+  const handleRedeemPoints = async () => {
+    const pts = Number(pointsInput);
+    if (!pts || pts < 100) { Alert.alert('Mínimo 100 puntos', 'Debes canjear al menos 100 puntos.'); return; }
+    if (pts > availablePoints) { Alert.alert('Puntos insuficientes', `Solo tienes ${availablePoints} puntos.`); return; }
+    try {
+      setRedeemingPoints(true);
+      const res = await pointsApi.redeem(pts);
+      setPointsDiscount(res.discount);
+      setAvailablePoints(res.remainingPoints);
+      setPointsInput('');
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo canjear');
+    } finally {
+      setRedeemingPoints(false);
+    }
+  };
+
+  const removePointsDiscount = () => {
+    setPointsDiscount(0);
+    setAvailablePoints((prev) => prev + Math.round(pointsDiscount * 100));
+  };
+
   const doCheckout = async () => {
     const order = await ordersApi.checkout({
       paymentMethod,
       deliveryType,
       shippingAddress: deliveryType === 'delivery' ? address.trim() : undefined,
-      pickupCenter: deliveryType === 'pickup' ? pickupCenter : undefined,
+      pickupCenter: deliveryType === 'pickup' ? pickupCenter?.name : undefined,
       couponCode: coupon?.code,
     });
     await refreshCart();
@@ -285,6 +340,40 @@ export default function CartScreen() {
           {couponError ? <Text style={styles.errorText}>{couponError}</Text> : null}
         </View>
 
+        {/* Puntos */}
+        {availablePoints >= 100 && (
+          <View style={styles.section}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="trophy-outline" size={16} color={Colors.warning} />
+              <Text style={styles.sectionTitle}>Puntos de fidelización</Text>
+            </View>
+            <Text style={styles.pointsAvail}>Tienes {availablePoints} puntos (100 pts = S/ 1.00 off)</Text>
+            {pointsDiscount > 0 ? (
+              <View style={styles.couponApplied}>
+                <Ionicons name="checkmark-circle" size={18} color={Colors.secondary} />
+                <Text style={styles.couponAppliedText}>{Math.round(pointsDiscount * 100)} pts canjeados — −{formatMoney(pointsDiscount)}</Text>
+                <TouchableOpacity onPress={removePointsDiscount}>
+                  <Ionicons name="close-circle" size={20} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.couponRow}>
+                <TextInput
+                  style={styles.couponInput}
+                  placeholder="Puntos a canjear (mín. 100)"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="number-pad"
+                  value={pointsInput}
+                  onChangeText={setPointsInput}
+                />
+                <TouchableOpacity style={styles.couponBtn} onPress={handleRedeemPoints} disabled={redeemingPoints}>
+                  {redeemingPoints ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.couponBtnText}>Canjear</Text>}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Entrega */}
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
@@ -307,12 +396,25 @@ export default function CartScreen() {
             />
           ) : (
             <View style={styles.pickupList}>
+              <TouchableOpacity style={styles.nearestBtn} onPress={handleFindNearest} disabled={locating}>
+                <Ionicons name="navigate-outline" size={15} color={Colors.primary} />
+                <Text style={styles.nearestBtnText}>
+                  {locating ? 'Buscando...' : 'Encontrar tienda más cercana'}
+                </Text>
+              </TouchableOpacity>
               {pickupCenters.map((center) => (
-                <TouchableOpacity key={center} style={styles.pickupOption} onPress={() => setPickupCenter(center)}>
-                  <View style={[styles.radioOuter, pickupCenter === center && styles.radioOuterActive]}>
-                    {pickupCenter === center && <View style={styles.radioInner} />}
+                <TouchableOpacity
+                  key={center.name}
+                  style={styles.pickupOption}
+                  onPress={() => setPickupCenter(center)}
+                >
+                  <View style={[styles.radioOuter, pickupCenter?.name === center.name && styles.radioOuterActive]}>
+                    {pickupCenter?.name === center.name && <View style={styles.radioInner} />}
                   </View>
-                  <Text style={styles.pickupText}>{center}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pickupText}>{center.name}</Text>
+                    <Text style={styles.pickupAddress}>{center.address}</Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -347,6 +449,9 @@ export default function CartScreen() {
           )}
           {totals.couponDiscount > 0 && (
             <TotalRow label={`Cupón ${coupon?.code ?? ''}`} value={`−${formatMoney(totals.couponDiscount)}`} accent />
+          )}
+          {totals.pointsDiscount > 0 && (
+            <TotalRow label="Puntos canjeados" value={`−${formatMoney(totals.pointsDiscount)}`} accent />
           )}
           <TotalRow label="Envío" value={totals.shipping > 0 ? formatMoney(totals.shipping) : 'Gratis 🎉'} />
         </View>
@@ -496,7 +601,14 @@ const styles = StyleSheet.create({
   },
   radioOuterActive: { borderColor: Colors.primary },
   radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
-  pickupText: { fontSize: 14, color: Colors.textPrimary, fontWeight: '500' },
+  pickupText: { fontSize: 14, color: Colors.textPrimary, fontWeight: '600' },
+  pickupAddress: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  nearestBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10, alignSelf: 'flex-start',
+  },
+  nearestBtnText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
   savedCardHint: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#ECFDF5', borderRadius: 10, padding: 10,
@@ -513,4 +625,5 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 13, color: Colors.textMuted },
   totalAmount: { fontSize: 24, fontWeight: '900', color: Colors.textPrimary },
   payBtn: { minWidth: 180 },
+  pointsAvail: { fontSize: 13, color: Colors.textSecondary, marginBottom: 4 },
 });

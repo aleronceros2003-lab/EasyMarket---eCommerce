@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../constants/Colors';
-import { Product } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { Product, wishlistApi } from '../services/api';
 import { formatMoney } from '../utils/format';
 
 interface ProductCardProps {
@@ -13,13 +14,38 @@ interface ProductCardProps {
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, compact = false }) => {
   const router = useRouter();
+  const { user } = useAuth();
   const scale = useRef(new Animated.Value(1)).current;
   const hasDiscount = product.discount > 0;
+
+  const [wished, setWished] = useState<boolean>(
+    Array.isArray(user?.wishlist) && user.wishlist.includes(product.id)
+  );
+  const [togglingWish, setTogglingWish] = useState(false);
 
   const handlePressIn = () =>
     Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start();
   const handlePressOut = () =>
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 40 }).start();
+
+  const handleWish = async (e: { stopPropagation?: () => void }) => {
+    if (e.stopPropagation) e.stopPropagation();
+    if (!user) { router.push('/auth/login'); return; }
+    try {
+      setTogglingWish(true);
+      if (wished) {
+        await wishlistApi.remove(product.id);
+        setWished(false);
+      } else {
+        await wishlistApi.add(product.id);
+        setWished(true);
+      }
+    } catch {
+      // fail silently
+    } finally {
+      setTogglingWish(false);
+    }
+  };
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
@@ -46,6 +72,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, compact = fal
               <Text style={styles.outOfStockText}>Agotado</Text>
             </View>
           )}
+          {/* Wishlist heart */}
+          <TouchableOpacity
+            style={styles.heartBtn}
+            onPress={handleWish}
+            disabled={togglingWish}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Ionicons
+              name={wished ? 'heart' : 'heart-outline'}
+              size={20}
+              color={wished ? Colors.danger : 'rgba(255,255,255,0.9)'}
+            />
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.info, compact && styles.infoCompact]}>
@@ -101,12 +140,23 @@ const styles = StyleSheet.create({
   discountText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   outOfStockOverlay: {
     position: 'absolute',
-    inset: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   outOfStockText: { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
+  heartBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   info: { padding: 14 },
   infoCompact: { padding: 10 },
   category: {

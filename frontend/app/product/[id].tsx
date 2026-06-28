@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,12 +14,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { io, Socket } from 'socket.io-client';
 import { Button } from '../../components/Button';
 import { StarRating } from '../../components/StarRating';
 import { Colors, Gradients } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
-import { Product, ProductReview, productsApi, reviewsApi } from '../../services/api';
+import { API_SOCKET_BASE, Product, ProductReview, productsApi, reviewsApi, wishlistApi } from '../../services/api';
 import { formatDate, formatMoney } from '../../utils/format';
 
 export default function ProductDetailScreen() {
@@ -31,6 +33,20 @@ export default function ProductDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [qty, setQty] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [wished, setWished] = useState<boolean>(
+    Array.isArray(user?.wishlist) && user.wishlist.includes(id)
+  );
+  const [togglingWish, setTogglingWish] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+
+  const handleWish = async () => {
+    if (!user) { router.push('/auth/login'); return; }
+    try {
+      setTogglingWish(true);
+      if (wished) { await wishlistApi.remove(id); setWished(false); }
+      else { await wishlistApi.add(id); setWished(true); }
+    } catch { /* fail silently */ } finally { setTogglingWish(false); }
+  };
 
   useEffect(() => {
     let active = true;
@@ -43,6 +59,23 @@ export default function ProductDetailScreen() {
       .then((r) => active && setReviews(r))
       .catch(() => active && setReviews([]));
     return () => { active = false; };
+  }, [id]);
+
+  // Socket.io: real-time stock updates
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const socket = io(API_SOCKET_BASE, { transports: ['websocket'] });
+    socketRef.current = socket;
+    socket.emit('join_product', id);
+    socket.on('stock_updated', ({ productId, stock }: { productId: string; stock: number }) => {
+      if (productId === id) {
+        setProduct((prev) => (prev ? { ...prev, stock } : prev));
+      }
+    });
+    return () => {
+      socket.emit('leave_product', id);
+      socket.disconnect();
+    };
   }, [id]);
 
   const handleAddToCart = async () => {
@@ -105,6 +138,13 @@ export default function ProductDetailScreen() {
               <Text style={styles.outOfStockText}>Agotado</Text>
             </View>
           )}
+          <TouchableOpacity style={styles.heartBtn} onPress={handleWish} disabled={togglingWish}>
+            <Ionicons
+              name={wished ? 'heart' : 'heart-outline'}
+              size={24}
+              color={wished ? Colors.danger : 'rgba(255,255,255,0.9)'}
+            />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
@@ -231,6 +271,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6,
   },
   outOfStockText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  heartBtn: {
+    position: 'absolute', top: 12, right: 12,
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   content: { padding: 20 },
   categoryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   categoryBadge: {

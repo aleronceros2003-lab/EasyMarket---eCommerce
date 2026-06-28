@@ -18,7 +18,8 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Colors, Gradients } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
-import { PaymentMethodSaved, authApi } from '../../services/api';
+import { PaymentMethodSaved, PointsHistoryItem, authApi, pointsApi } from '../../services/api';
+import { formatDate, formatMoney } from '../../utils/format';
 
 const BRAND_COLORS: Record<string, string> = {
   visa: '#1A1F71',
@@ -42,6 +43,10 @@ export default function ProfileScreen() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodSaved[]>([]);
   const [loadingCards, setLoadingCards] = useState(false);
 
+  const [points, setPoints] = useState<number>(0);
+  const [pointsHistory, setPointsHistory] = useState<PointsHistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
   useEffect(() => {
     if (user) {
       setLoadingCards(true);
@@ -49,6 +54,10 @@ export default function ProfileScreen() {
         .then(setPaymentMethods)
         .catch(() => {})
         .finally(() => setLoadingCards(false));
+
+      pointsApi.get()
+        .then((res) => { setPoints(res.points); setPointsHistory(res.history); })
+        .catch(() => {});
     }
   }, [user]);
 
@@ -203,6 +212,45 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Puntos de fidelización */}
+        <View style={styles.card}>
+          <LinearGradient colors={Gradients.warm} style={styles.pointsHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pointsLabel}>Mis puntos</Text>
+              <Text style={styles.pointsValue}>{points} pts</Text>
+              <Text style={styles.pointsEquiv}>= {formatMoney(Math.floor(points / 100) * 1)} de descuento disponible</Text>
+            </View>
+            <View style={styles.pointsCoin}>
+              <Ionicons name="trophy" size={28} color="#fff" />
+            </View>
+          </LinearGradient>
+          <TouchableOpacity style={styles.historyToggle} onPress={() => setShowHistory((v) => !v)}>
+            <Text style={styles.historyToggleText}>
+              {showHistory ? 'Ocultar historial' : 'Ver historial de puntos'}
+            </Text>
+            <Ionicons name={showHistory ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.primary} />
+          </TouchableOpacity>
+          {showHistory && (
+            <View style={styles.historyList}>
+              {pointsHistory.length === 0 ? (
+                <Text style={styles.cardSubtext}>Sin movimientos aún</Text>
+              ) : (
+                pointsHistory.slice(0, 8).map((item, idx) => (
+                  <View key={idx} style={styles.historyRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyReason}>{item.reason}</Text>
+                      <Text style={styles.historyDate}>{formatDate(item.createdAt)}</Text>
+                    </View>
+                    <Text style={[styles.historyAmount, { color: item.amount >= 0 ? Colors.secondary : Colors.danger }]}>
+                      {item.amount >= 0 ? '+' : ''}{item.amount} pts
+                    </Text>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+        </View>
+
         {/* Alertas */}
         <View style={styles.card}>
           <View style={styles.alertRow}>
@@ -327,4 +375,24 @@ const styles = StyleSheet.create({
     borderRadius: 14, borderWidth: 1.5, borderColor: Colors.danger,
   },
   logoutText: { color: Colors.danger, fontWeight: '700', fontSize: 15 },
+  pointsHeader: {
+    flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 16, marginBottom: 14,
+  },
+  pointsLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '700', marginBottom: 4 },
+  pointsValue: { color: '#fff', fontSize: 28, fontWeight: '900' },
+  pointsEquiv: { color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 4 },
+  pointsCoin: {
+    width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  historyToggle: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  historyToggleText: { color: Colors.primary, fontWeight: '600', fontSize: 14 },
+  historyList: { marginTop: 12, gap: 10 },
+  historyRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+  },
+  historyReason: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
+  historyDate: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  historyAmount: { fontSize: 15, fontWeight: '800' },
 });

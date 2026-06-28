@@ -6,11 +6,11 @@ const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
-// GET /api/config/pickup-centers
+// GET /api/config/pickup-centers  — retorna array con nombre, dirección y coordenadas
 router.get(
   '/pickup-centers',
   asyncHandler(async (_req, res) => {
-    res.json(config.pickupCenters);
+    res.json(config.pickupCentersData);
   })
 );
 
