@@ -28,6 +28,8 @@ const config = {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
 
+  adminSecret: process.env.ADMIN_SECRET || '',
+
   bcrypt: {
     saltRounds: Number(process.env.BCRYPT_SALT_ROUNDS) || 10,
   },

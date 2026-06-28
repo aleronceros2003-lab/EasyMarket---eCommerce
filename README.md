@@ -10,18 +10,8 @@
 ## Backend
 
 ```bash
-cd C:\PROGRAMAS\EasyMarket---eCommerce\backend
-
-# Solo la primera vez:
+cd backend
 npm install
-
-# Poblar la base de datos con datos de prueba (solo una vez):
-npm run seed
-
-# Iniciar el servidor (modo desarrollo con auto-restart):
-npm run dev
-
-# O en modo producción:
 npm start
 ```
 
@@ -32,12 +22,8 @@ El servidor corre en: `http://localhost:3001`
 ## Frontend
 
 ```bash
-cd C:\PROGRAMAS\EasyMarket---eCommerce\frontend
-
-# Solo la primera vez:
+cd frontend
 npm install
-
-# Iniciar Expo:
 npx expo start
 ```
 

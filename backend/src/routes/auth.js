@@ -164,4 +164,22 @@ router.delete(
   })
 );
 
+// POST /api/auth/make-admin — promueve un usuario a administrador (requiere ADMIN_SECRET)
+router.post(
+  '/make-admin',
+  asyncHandler(async (req, res) => {
+    const { email, secret } = req.body;
+    if (!config.adminSecret || secret !== config.adminSecret) {
+      throw ApiError.unauthorized('Clave de administrador incorrecta');
+    }
+    const user = await User.findOneAndUpdate(
+      { email: String(email).toLowerCase() },
+      { role: 'admin' },
+      { new: true }
+    );
+    if (!user) throw ApiError.notFound('Usuario no encontrado');
+    res.json({ message: `${user.name} ahora es administrador`, role: user.role });
+  })
+);
+
 module.exports = router;
