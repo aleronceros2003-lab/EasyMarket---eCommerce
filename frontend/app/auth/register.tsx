@@ -73,7 +73,12 @@ export default function RegisterScreen() {
           <LinearGradient colors={Gradients.hero} style={styles.hero}>
             <Image
               source={require('../../assets/images/logo.png')}
-              style={styles.logoImage}
+              style={[
+                styles.logoImage,
+                Platform.OS === 'web'
+                  ? ({ filter: 'brightness(0) invert(1)' } as any)
+                  : { tintColor: '#FFFFFF' },
+              ]}
               resizeMode="contain"
             />
             <Text style={styles.heroTitle}>Crear cuenta</Text>

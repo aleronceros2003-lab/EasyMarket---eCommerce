@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { Colors } from '../../constants/Colors';
@@ -10,7 +10,13 @@ function HeaderLogo() {
   return (
     <Image
       source={require('../../assets/images/logo-full.png')}
-      style={{ width: 130, height: 36 }}
+      style={[
+        { width: 140, height: 38 },
+        // Logo verde sobre fondo verde oscuro: invertir a blanco para contraste
+        Platform.OS === 'web'
+          ? ({ filter: 'brightness(0) invert(1)' } as object)
+          : { tintColor: '#FFFFFF' },
+      ]}
       resizeMode="contain"
     />
   );

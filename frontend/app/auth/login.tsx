@@ -67,7 +67,12 @@ export default function LoginScreen() {
           <LinearGradient colors={Gradients.hero} style={styles.hero}>
             <Image
               source={require('../../assets/images/logo-full.png')}
-              style={styles.logoImage}
+              style={[
+                styles.logoImage,
+                Platform.OS === 'web'
+                  ? ({ filter: 'brightness(0) invert(1)' } as any)
+                  : { tintColor: '#FFFFFF' },
+              ]}
               resizeMode="contain"
             />
             <Text style={styles.heroSub}>Tu tienda favorita en un solo lugar</Text>
