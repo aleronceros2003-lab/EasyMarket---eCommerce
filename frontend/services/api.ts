@@ -20,6 +20,9 @@ const getApiBase = (): string => {
   // En Expo Go, hostUri tiene la forma "192.168.x.x:8081"
   const hostUri: string | undefined =
     (Constants.expoConfig as { hostUri?: string } | null)?.hostUri ??
+    // Expo SDK 47+ manifest2 format (Expo Go)
+    ((Constants as Record<string, unknown>).manifest2 as { extra?: { expoClient?: { hostUri?: string } } } | null)?.extra?.expoClient?.hostUri ??
+    // Legacy format
     (Constants.manifest as { debuggerHost?: string } | null)?.debuggerHost;
   if (hostUri) {
     const ip = hostUri.split(':')[0];
@@ -157,8 +160,8 @@ export const ordersApi = {
     request<Order>('POST', '/orders/checkout', payload, true),
   getOrders: () => request<Order[]>('GET', '/orders', undefined, true),
   getOrder: (id: string) => request<Order>('GET', `/orders/${id}`, undefined, true),
-  updateStatus: (id: string, status: OrderStatus) =>
-    request<Order>('PATCH', `/orders/${id}/status`, { status }, true),
+  submitComplaint: (id: string, text: string) =>
+    request<Order>('POST', `/orders/${id}/complaint`, { text }, true),
   downloadReceipt: async (orderId: string): Promise<string | void> => {
     const token = await getToken();
     const url = `${API_BASE}/orders/${orderId}/receipt`;
@@ -322,7 +325,8 @@ export interface CouponValidation {
 
 export type PaymentMethod = 'card' | 'cash_on_delivery';
 export type DeliveryType = 'delivery' | 'pickup';
-export type OrderStatus = 'preparing' | 'on_the_way' | 'delivered';
+export type OrderStatus = 'preparing' | 'on_the_way' | 'at_door' | 'delivered' | 'finalized';
+export type ComplaintStatus = 'pending' | 'valid' | 'invalid';
 
 export interface CheckoutPayload {
   paymentMethod: PaymentMethod;
@@ -348,6 +352,13 @@ export interface OrderStatusEntry {
   at: string;
 }
 
+export interface OrderComplaint {
+  text: string;
+  status: ComplaintStatus;
+  submittedAt: string;
+  resolvedAt: string | null;
+}
+
 export interface Order {
   id: string;
   userId: string;
@@ -365,7 +376,12 @@ export interface Order {
   status: OrderStatus;
   statusHistory: OrderStatusEntry[];
   rated: boolean;
+  complaint: OrderComplaint | null;
   createdAt: string;
+}
+
+export interface ComplaintWithUser extends Order {
+  user: { _id: string; name: string; email: string } | null;
 }
 
 export interface ReviewPayload {
@@ -430,7 +446,7 @@ export const adminApi = {
     ).toString();
     return request<{ orders: Order[]; total: number }>('GET', `/admin/orders${qs ? `?${qs}` : ''}`, undefined, true);
   },
-  updateOrderStatus: (id: string, status: string) =>
+  updateOrderStatus: (id: string, status: OrderStatus) =>
     request<Order>('PATCH', `/admin/orders/${id}/status`, { status }, true),
   getUsers: (page = 1) =>
     request<{ users: User[]; total: number }>('GET', `/admin/users?page=${page}`, undefined, true),
@@ -440,6 +456,14 @@ export const adminApi = {
   createProduct: (data: Partial<Product>) => request<Product>('POST', '/admin/products', data, true),
   updateProduct: (id: string, data: Partial<Product>) => request<Product>('PUT', `/admin/products/${id}`, data, true),
   deleteProduct: (id: string) => request<void>('DELETE', `/admin/products/${id}`, undefined, true),
+  getComplaints: (params?: { status?: string; page?: number }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+    ).toString();
+    return request<{ orders: ComplaintWithUser[]; total: number }>('GET', `/admin/complaints${qs ? `?${qs}` : ''}`, undefined, true);
+  },
+  resolveComplaint: (orderId: string, status: 'valid' | 'invalid') =>
+    request<Order>('PATCH', `/admin/complaints/${orderId}`, { status }, true),
 };
 
 // ---------------------------------------------------------------------------

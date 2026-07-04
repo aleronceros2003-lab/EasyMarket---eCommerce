@@ -22,18 +22,22 @@ import {
   formatDateTime, formatMoney,
 } from '../../utils/format';
 
-const STATUS_FLOW: OrderStatus[] = ['preparing', 'on_the_way', 'delivered'];
+const STATUS_FLOW: OrderStatus[] = ['preparing', 'on_the_way', 'at_door', 'delivered', 'finalized'];
 
 const STATUS_ICONS: Record<OrderStatus, React.ComponentProps<typeof Ionicons>['name']> = {
   preparing: 'cube-outline',
   on_the_way: 'bicycle-outline',
-  delivered: 'checkmark-done',
+  at_door: 'home-outline',
+  delivered: 'checkmark-circle-outline',
+  finalized: 'checkmark-done',
 };
 
 const STATUS_COLORS: Record<OrderStatus, string[]> = {
   preparing: ['#F59E0B', '#D97706'],
   on_the_way: ['#3B82F6', '#2563EB'],
+  at_door: ['#8B5CF6', '#7C3AED'],
   delivered: ['#10B981', '#059669'],
+  finalized: ['#059669', '#047857'],
 };
 
 export default function OrderDetailScreen() {
@@ -42,12 +46,14 @@ export default function OrderDetailScreen() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
-  const [advancing, setAdvancing] = useState(false);
   const [appRating, setAppRating] = useState(5);
   const [deliveryRating, setDeliveryRating] = useState(5);
   const [productRatings, setProductRatings] = useState<Record<string, number>>({});
   const [comment, setComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [complaintText, setComplaintText] = useState('');
+  const [submittingComplaint, setSubmittingComplaint] = useState(false);
+  const [showComplaintForm, setShowComplaintForm] = useState(false);
 
   const loadOrder = () => {
     ordersApi.getOrder(id)
@@ -69,20 +75,6 @@ export default function OrderDetailScreen() {
     finally { setDownloading(false); }
   };
 
-  const handleAdvance = async () => {
-    if (!order) return;
-    const next = STATUS_FLOW[STATUS_FLOW.indexOf(order.status) + 1];
-    if (!next) return;
-    try {
-      setAdvancing(true);
-      setOrder(await ordersApi.updateStatus(id, next));
-    } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo actualizar');
-    } finally {
-      setAdvancing(false);
-    }
-  };
-
   const handleSubmitReview = async () => {
     if (!order) return;
     try {
@@ -98,6 +90,21 @@ export default function OrderDetailScreen() {
       Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo enviar');
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const handleSubmitComplaint = async () => {
+    if (!order || !complaintText.trim()) return;
+    try {
+      setSubmittingComplaint(true);
+      await ordersApi.submitComplaint(order.id, complaintText.trim());
+      Alert.alert('Reclamo enviado', 'Revisaremos tu caso lo antes posible y te contactaremos.');
+      setShowComplaintForm(false);
+      loadOrder();
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo enviar el reclamo');
+    } finally {
+      setSubmittingComplaint(false);
     }
   };
 
@@ -124,10 +131,10 @@ export default function OrderDetailScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header de estado */}
-      <LinearGradient colors={STATUS_COLORS[order.status]} style={styles.statusHeader}>
+      <LinearGradient colors={STATUS_COLORS[order.status] ?? STATUS_COLORS.preparing} style={styles.statusHeader}>
         <Text style={styles.statusHeaderId}>#{order.id.slice(0, 8).toUpperCase()}</Text>
         <View style={styles.statusHeaderIcon}>
-          <Ionicons name={STATUS_ICONS[order.status]} size={36} color="#fff" />
+          <Ionicons name={STATUS_ICONS[order.status] ?? 'cube-outline'} size={36} color="#fff" />
         </View>
         <Text style={styles.statusHeaderLabel}>{ORDER_STATUS_LABELS[order.status]}</Text>
         <Text style={styles.statusHeaderDate}>{formatDateTime(order.createdAt)}</Text>
@@ -136,44 +143,44 @@ export default function OrderDetailScreen() {
       {/* Timeline */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Seguimiento del pedido</Text>
-        <View style={styles.timeline}>
-          {STATUS_FLOW.map((s, idx) => {
-            const reached = idx <= currentIndex;
-            return (
-              <View key={s} style={styles.timelineStep}>
-                {idx < STATUS_FLOW.length - 1 && (
-                  <View style={[styles.timelineLine, idx < currentIndex && styles.timelineLineActive]} />
-                )}
-                <LinearGradient
-                  colors={reached ? STATUS_COLORS[s] : ['#E5E7EB', '#E5E7EB']}
-                  style={styles.timelineDot}
-                >
-                  <Ionicons name={STATUS_ICONS[s]} size={16} color={reached ? '#fff' : Colors.textMuted} />
-                </LinearGradient>
-                <Text style={[styles.timelineLabel, reached && styles.timelineLabelActive]}>
-                  {ORDER_STATUS_LABELS[s]}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.timeline}>
+            {STATUS_FLOW.map((s, idx) => {
+              const reached = idx <= currentIndex;
+              return (
+                <View key={s} style={styles.timelineStep}>
+                  {idx < STATUS_FLOW.length - 1 && (
+                    <View style={[styles.timelineLine, idx < currentIndex && styles.timelineLineActive]} />
+                  )}
+                  <LinearGradient
+                    colors={reached ? STATUS_COLORS[s] : ['#E5E7EB', '#E5E7EB']}
+                    style={styles.timelineDot}
+                  >
+                    <Ionicons name={STATUS_ICONS[s]} size={16} color={reached ? '#fff' : Colors.textMuted} />
+                  </LinearGradient>
+                  <Text style={[styles.timelineLabel, reached && styles.timelineLabelActive]}>
+                    {ORDER_STATUS_LABELS[s]}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
 
-        {order.status !== 'delivered' && (
-          <Button
-            title="Simular avance de estado"
-            variant="outline"
-            onPress={handleAdvance}
-            loading={advancing}
-            size="sm"
-            style={{ marginTop: 12 }}
-          />
+        {order.status !== 'finalized' && (
+          <View style={styles.deliveryNote}>
+            <Ionicons name="information-circle-outline" size={16} color={Colors.textMuted} />
+            <Text style={styles.deliveryNoteText}>
+              El avance del estado es gestionado por el administrador.
+            </Text>
+          </View>
         )}
       </View>
 
       {/* Resumen del pedido */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Detalles del pedido</Text>
-        <SummaryRow label="Pago" value={PAYMENT_LABELS[order.paymentMethod]} />
+        <SummaryRow label="Pago" value={PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod} />
         <SummaryRow label="Entrega" value={DELIVERY_LABELS[order.deliveryType]} />
         {order.deliveryType === 'pickup' && order.pickupCenter && (
           <SummaryRow label="Tienda" value={order.pickupCenter} />
@@ -221,8 +228,8 @@ export default function OrderDetailScreen() {
         </View>
       </View>
 
-      {/* Valoración */}
-      {order.status === 'delivered' && !order.rated && (
+      {/* Valoración — solo disponible cuando el admin marca FINALIZADO */}
+      {order.status === 'finalized' && !order.rated && (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>¿Cómo fue tu experiencia?</Text>
 
@@ -271,6 +278,77 @@ export default function OrderDetailScreen() {
           <Text style={styles.ratedText}>¡Gracias por tu valoración!</Text>
         </View>
       )}
+
+      {/* Sección de reclamos — solo cuando el pedido está finalizado */}
+      {order.status === 'finalized' && !order.complaint && (
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.complaintToggle}
+            onPress={() => setShowComplaintForm((v) => !v)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="alert-circle-outline" size={20} color={Colors.warning} />
+            <Text style={styles.complaintToggleText}>¿No recibiste tu producto?</Text>
+            <Ionicons
+              name={showComplaintForm ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={Colors.textMuted}
+            />
+          </TouchableOpacity>
+
+          {showComplaintForm && (
+            <>
+              <Text style={styles.complaintInfo}>
+                Si no has recibido tu producto, déjanos un comentario con el número de la orden y el
+                nombre del producto, para que el almacén lo supervise lo más pronto posible.
+              </Text>
+              <Text style={styles.complaintOrderRef}>
+                Orden: #{order.id.slice(0, 8).toUpperCase()} ·{' '}
+                {order.items.map((i) => i.name).join(', ')}
+              </Text>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Describe el problema con tu pedido..."
+                placeholderTextColor={Colors.textMuted}
+                value={complaintText}
+                onChangeText={setComplaintText}
+                multiline
+              />
+              <Button
+                title="Enviar reclamo"
+                variant="outline"
+                onPress={handleSubmitComplaint}
+                loading={submittingComplaint}
+                fullWidth
+                style={{ marginTop: 12 }}
+              />
+            </>
+          )}
+        </View>
+      )}
+
+      {order.complaint && (
+        <View style={[styles.card, styles.complaintSentCard]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Ionicons
+              name={
+                order.complaint.status === 'valid' ? 'checkmark-circle' :
+                order.complaint.status === 'invalid' ? 'close-circle' : 'time-outline'
+              }
+              size={20}
+              color={
+                order.complaint.status === 'valid' ? Colors.secondary :
+                order.complaint.status === 'invalid' ? Colors.danger : Colors.warning
+              }
+            />
+            <Text style={styles.complaintSentTitle}>
+              Reclamo {order.complaint.status === 'pending' ? 'en revisión' :
+                order.complaint.status === 'valid' ? 'validado' : 'revisado'}
+            </Text>
+          </View>
+          <Text style={styles.complaintSentText}>{order.complaint.text}</Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -310,10 +388,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 }, elevation: 3,
   },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: Colors.textPrimary, marginBottom: 16, letterSpacing: -0.2 },
-  timeline: { flexDirection: 'row', justifyContent: 'space-between', position: 'relative' },
-  timelineStep: { flex: 1, alignItems: 'center', position: 'relative' },
+  timeline: { flexDirection: 'row', alignItems: 'flex-start', gap: 0 },
+  timelineStep: { width: 72, alignItems: 'center', position: 'relative' },
   timelineLine: {
-    position: 'absolute', top: 20, left: '60%', right: '-40%',
+    position: 'absolute', top: 20, left: '60%', width: 72,
     height: 3, backgroundColor: Colors.border, zIndex: 0, borderRadius: 2,
   },
   timelineLineActive: { backgroundColor: Colors.secondary },
@@ -321,8 +399,13 @@ const styles = StyleSheet.create({
     width: 42, height: 42, borderRadius: 21,
     alignItems: 'center', justifyContent: 'center', zIndex: 2,
   },
-  timelineLabel: { fontSize: 10, color: Colors.textMuted, marginTop: 7, textAlign: 'center', fontWeight: '500' },
+  timelineLabel: { fontSize: 9, color: Colors.textMuted, marginTop: 7, textAlign: 'center', fontWeight: '500' },
   timelineLabelActive: { color: Colors.textPrimary, fontWeight: '700' },
+  deliveryNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 12, backgroundColor: Colors.borderLight, borderRadius: 10, padding: 10,
+  },
+  deliveryNoteText: { flex: 1, fontSize: 12, color: Colors.textMuted },
   summaryRow: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'flex-start', marginBottom: 10,
@@ -361,4 +444,18 @@ const styles = StyleSheet.create({
   },
   ratedIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   ratedText: { color: Colors.secondary, fontWeight: '700', fontSize: 14 },
+  complaintToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  complaintToggleText: { flex: 1, fontSize: 14, fontWeight: '700', color: Colors.warning },
+  complaintInfo: {
+    fontSize: 13, color: Colors.textSecondary, marginTop: 12, lineHeight: 20,
+  },
+  complaintOrderRef: {
+    fontSize: 12, color: Colors.textMuted, marginTop: 6, marginBottom: 4,
+    fontStyle: 'italic',
+  },
+  complaintSentCard: { borderLeftWidth: 4, borderLeftColor: Colors.warning },
+  complaintSentTitle: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
+  complaintSentText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
 });

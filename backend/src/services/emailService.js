@@ -83,4 +83,44 @@ const notifyOffer = async (user, products) => {
   });
 };
 
-module.exports = { sendMail, notifyOffer, getTransporter };
+/**
+ * Notifica a un usuario que un producto de su lista de favoritos está en oferta.
+ * @param {object} user  Usuario con { name, email, emailAlerts }
+ * @param {object} product  Producto con { name, price, discount }
+ */
+const sendWishlistOfferEmail = async (user, product) => {
+  if (!user?.email) return false;
+  const discountedPrice = Math.round(product.price * (1 - product.discount / 100) * 100) / 100;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1F2937;">
+      <div style="background:linear-gradient(135deg,#052E1C,#10B981);padding:28px 24px;border-radius:16px 16px 0 0;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:22px;">¡Tu favorito está en oferta!</h1>
+      </div>
+      <div style="background:#fff;padding:28px 24px;border-radius:0 0 16px 16px;border:1px solid #E5E7EB;">
+        <p>Hola <strong>${user.name}</strong>,</p>
+        <p>Un producto que guardaste en favoritos acaba de recibir un descuento exclusivo:</p>
+        <div style="border:2px solid #10B981;border-radius:12px;padding:20px;margin:20px 0;text-align:center;background:#F0FDF4;">
+          <p style="font-size:18px;font-weight:bold;color:#052E1C;margin:0 0 8px;">${product.name}</p>
+          <p style="font-size:32px;color:#EF4444;font-weight:900;margin:0;">${product.discount}% OFF</p>
+          <p style="color:#6B7280;margin:8px 0 0;">
+            Antes: <s>S/ ${product.price.toFixed(2)}</s>&nbsp;&nbsp;→&nbsp;&nbsp;
+            <span style="color:#10B981;font-weight:bold;font-size:18px;">S/ ${discountedPrice.toFixed(2)}</span>
+          </p>
+        </div>
+        <p>Aprovecha antes de que se agote el stock.</p>
+        <p style="color:#9CA3AF;font-size:12px;margin-top:24px;">
+          Recibiste este correo porque activaste las alertas de EasyMarket.
+          Puedes desactivarlas en tu perfil.
+        </p>
+      </div>
+    </div>
+  `;
+  return sendMail({
+    to: user.email,
+    subject: `🔥 Tu favorito "${product.name}" tiene ${product.discount}% OFF`,
+    html,
+    text: `Hola ${user.name}! "${product.name}" ahora tiene ${product.discount}% de descuento. Precio: S/ ${discountedPrice.toFixed(2)}`,
+  });
+};
+
+module.exports = { sendMail, notifyOffer, sendWishlistOfferEmail, getTransporter };

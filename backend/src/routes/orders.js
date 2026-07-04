@@ -13,14 +13,12 @@ const { requireFields } = require('../utils/validators');
 const { finalPrice, buildTotals } = require('../utils/pricing');
 const { validateCoupon } = require('../services/couponService');
 const { streamReceipt } = require('../services/pdfService');
-const { sendPushNotification } = require('../services/pushService');
 const stockEmitter = require('../services/stockEmitter');
 
 const router = express.Router();
 
 const PAYMENT_METHODS = ['card', 'cash_on_delivery'];
 const DELIVERY_TYPES = ['delivery', 'pickup'];
-const ORDER_FLOW = ['preparing', 'on_the_way', 'delivered'];
 
 // POST /api/orders/checkout
 router.post(
@@ -151,39 +149,19 @@ router.get(
   })
 );
 
-// PATCH /api/orders/:id/status  (simulación de avance de estado para el usuario)
-router.patch(
-  '/:id/status',
+// POST /api/orders/:id/complaint
+router.post(
+  '/:id/complaint',
   authenticate,
   asyncHandler(async (req, res) => {
-    const { status } = req.body;
-    if (!ORDER_FLOW.includes(status)) {
-      throw ApiError.badRequest(`Estado inválido. Use: ${ORDER_FLOW.join(', ')}`);
-    }
-
+    const { text } = req.body;
+    if (!text?.trim()) throw ApiError.badRequest('El texto del reclamo es requerido');
     const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
     if (!order) throw ApiError.notFound('Pedido no encontrado');
-
-    if (ORDER_FLOW.indexOf(status) < ORDER_FLOW.indexOf(order.status)) {
-      throw ApiError.badRequest('No se puede retroceder el estado del pedido');
-    }
-    order.status = status;
-    order.statusHistory.push({ status, at: new Date() });
+    if (order.complaint) throw ApiError.badRequest('Ya existe un reclamo para este pedido');
+    order.complaint = { text: text.trim(), status: 'pending', submittedAt: new Date() };
     await order.save();
-
-    // Push notification al usuario
-    const pushMessages = {
-      on_the_way: { title: '🚴 Tu pedido está en camino', body: 'El repartidor ya salió con tu pedido.' },
-      delivered: { title: '✅ Pedido entregado', body: '¡Tu pedido llegó! No olvides calificarlo.' },
-    };
-    if (pushMessages[status]) {
-      const usr = await User.findById(req.user.id).select('pushToken');
-      if (usr?.pushToken) {
-        sendPushNotification(usr.pushToken, pushMessages[status].title, pushMessages[status].body, { orderId: order.id });
-      }
-    }
-
-    res.json(order.toJSON());
+    res.status(201).json(order.toJSON());
   })
 );
 
