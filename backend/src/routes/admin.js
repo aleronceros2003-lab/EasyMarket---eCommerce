@@ -7,7 +7,7 @@ const ApiError = require('../utils/ApiError');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
-const { sendWishlistOfferEmail } = require('../services/emailService');
+const { sendWishlistOfferEmail, sendOrderStatusEmail } = require('../services/emailService');
 const { sendPushNotification } = require('../services/pushService');
 
 const router = express.Router();
@@ -115,18 +115,23 @@ router.patch(
     order.statusHistory.push({ status, at: new Date() });
     await order.save();
 
-    // Push notification al usuario (lookup correcto — userId es String sin ref)
+    // Push + email al usuario (fire-and-forget)
     const pushMessages = {
       on_the_way: { title: '🚴 Tu pedido está en camino', body: 'El repartidor ya salió con tu pedido.' },
       at_door: { title: '🏠 El repartidor está en tu puerta', body: 'Tu pedido está siendo entregado ahora mismo.' },
       delivered: { title: '📦 Pedido entregado por el repartidor', body: 'El repartidor confirmó la entrega de tu pedido.' },
       finalized: { title: '✅ Tu pedido fue finalizado', body: '¡Ya puedes confirmar la entrega y calificarnos!' },
     };
-    if (pushMessages[status]) {
-      const user = await User.findById(order.userId).select('pushToken');
-      if (user?.pushToken) {
-        sendPushNotification(user.pushToken, pushMessages[status].title, pushMessages[status].body, { orderId: order.id });
-      }
+
+    const notifyStatuses = ['on_the_way', 'at_door', 'delivered', 'finalized'];
+    if (notifyStatuses.includes(status)) {
+      User.findById(order.userId).select('pushToken email name').then((user) => {
+        if (!user) return;
+        if (user.pushToken && pushMessages[status]) {
+          sendPushNotification(user.pushToken, pushMessages[status].title, pushMessages[status].body, { orderId: order.id });
+        }
+        sendOrderStatusEmail(user.toJSON(), order.toJSON(), status).catch(() => {});
+      }).catch(() => {});
     }
 
     res.json(order.toJSON());

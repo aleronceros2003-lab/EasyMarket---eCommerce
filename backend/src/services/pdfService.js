@@ -2,25 +2,17 @@
 
 const PDFDocument = require('pdfkit');
 
-/**
- * Genera la boleta electrónica de un pedido como PDF y la escribe en el stream
- * de respuesta (o en cualquier stream Writable).
- *
- * @param {object} order              Pedido completo.
- * @param {object} user               Usuario dueño del pedido.
- * @param {import('stream').Writable} stream  Destino (p. ej. res de Express).
- */
-const streamReceipt = (order, user, stream) => {
-  const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  doc.pipe(stream);
+const STATUS_LABELS = {
+  preparing: 'En almacén',
+  on_the_way: 'En camino',
+  at_door: 'En domicilio',
+  delivered: 'Entregado',
+  finalized: 'Finalizado',
+};
 
-  const money = (n) => `S/ ${Number(n).toFixed(2)}`;
-  const statusLabel = {
-    preparing: 'En preparación',
-    on_the_way: 'En camino',
-    delivered: 'Entregado',
-  };
+const money = (n) => `S/ ${Number(n).toFixed(2)}`;
 
+const _buildDoc = (order, user, doc) => {
   // Encabezado
   doc.fontSize(22).fillColor('#1a73e8').text('EasyMarket', { align: 'left' });
   doc.fontSize(10).fillColor('#666').text('Boleta de Venta Electrónica');
@@ -28,7 +20,7 @@ const streamReceipt = (order, user, stream) => {
   doc.fillColor('#000').fontSize(10);
   doc.text(`N° de pedido: ${order.id}`);
   doc.text(`Fecha: ${new Date(order.createdAt).toLocaleString('es-PE')}`);
-  doc.text(`Estado: ${statusLabel[order.status] || order.status}`);
+  doc.text(`Estado: ${STATUS_LABELS[order.status] || order.status}`);
   doc.moveDown();
 
   // Datos del cliente
@@ -41,9 +33,7 @@ const streamReceipt = (order, user, stream) => {
   } else {
     doc.text(`Entrega: Delivery — ${order.shippingAddress || '—'}`);
   }
-  doc.text(
-    `Pago: ${order.paymentMethod === 'cash_on_delivery' ? 'Contraentrega' : 'Tarjeta'}`
-  );
+  doc.text(`Pago: ${order.paymentMethod === 'cash_on_delivery' ? 'Contraentrega' : 'Tarjeta'}`);
   doc.moveDown();
 
   // Tabla de ítems
@@ -55,11 +45,7 @@ const streamReceipt = (order, user, stream) => {
   doc.text('Cant.', colX.qty, tableTop);
   doc.text('P. Unit.', colX.price, tableTop);
   doc.text('Subtotal', colX.subtotal, tableTop);
-  doc
-    .moveTo(50, tableTop + 15)
-    .lineTo(545, tableTop + 15)
-    .strokeColor('#cccccc')
-    .stroke();
+  doc.moveTo(50, tableTop + 15).lineTo(545, tableTop + 15).strokeColor('#cccccc').stroke();
 
   let y = tableTop + 22;
   doc.fillColor('#000');
@@ -92,12 +78,31 @@ const streamReceipt = (order, user, stream) => {
 
   // Pie
   doc.moveDown(2);
-  doc
-    .fontSize(8)
-    .fillColor('#999')
-    .text('Gracias por tu compra en EasyMarket.', 50, 760, { align: 'center', width: 495 });
+  doc.fontSize(8).fillColor('#999').text('Gracias por tu compra en EasyMarket.', 50, 760, { align: 'center', width: 495 });
+};
 
+/**
+ * Genera la boleta como PDF y la escribe en el stream de respuesta.
+ */
+const streamReceipt = (order, user, stream) => {
+  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+  doc.pipe(stream);
+  _buildDoc(order, user, doc);
   doc.end();
 };
 
-module.exports = { streamReceipt };
+/**
+ * Genera la boleta como Buffer (para adjuntar en emails).
+ */
+const generateReceiptBuffer = (order, user) =>
+  new Promise((resolve, reject) => {
+    const chunks = [];
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    _buildDoc(order, user, doc);
+    doc.end();
+  });
+
+module.exports = { streamReceipt, generateReceiptBuffer };

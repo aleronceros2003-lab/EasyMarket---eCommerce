@@ -12,7 +12,8 @@ const ApiError = require('../utils/ApiError');
 const { requireFields } = require('../utils/validators');
 const { finalPrice, buildTotals } = require('../utils/pricing');
 const { validateCoupon } = require('../services/couponService');
-const { streamReceipt } = require('../services/pdfService');
+const { streamReceipt, generateReceiptBuffer } = require('../services/pdfService');
+const { sendOrderConfirmationEmail } = require('../services/emailService');
 const stockEmitter = require('../services/stockEmitter');
 
 const router = express.Router();
@@ -113,16 +114,27 @@ router.post(
 
     // Sumar puntos al usuario (10 puntos por cada sol gastado).
     const earnedPoints = Math.floor(order.total * 10);
-    await User.findByIdAndUpdate(req.user.id, {
-      $inc: { points: earnedPoints },
-      $push: {
-        pointsHistory: {
-          amount: earnedPoints,
-          reason: `Compra #${order._id.toString().slice(-6)}`,
-          createdAt: new Date(),
+    const userForEmail = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        $inc: { points: earnedPoints },
+        $push: {
+          pointsHistory: {
+            amount: earnedPoints,
+            reason: `Compra #${order._id.toString().slice(-6)}`,
+            createdAt: new Date(),
+          },
         },
       },
-    });
+      { new: false }
+    );
+
+    // Email de confirmación con PDF adjunto (fire-and-forget)
+    if (userForEmail?.email) {
+      generateReceiptBuffer(order.toJSON(), userForEmail.toJSON())
+        .then((pdf) => sendOrderConfirmationEmail(userForEmail.toJSON(), order.toJSON(), pdf))
+        .catch(() => {});
+    }
 
     res.status(201).json(order.toJSON());
   })

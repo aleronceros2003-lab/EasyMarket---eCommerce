@@ -9,6 +9,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { requireFields, assertEmail } = require('../utils/validators');
 const config = require('../config/env');
+const { sendWelcomeEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -39,6 +40,8 @@ router.post(
     });
 
     const token = signToken(user);
+    // Fire-and-forget: no bloquea la respuesta
+    sendWelcomeEmail(user.toJSON()).catch(() => {});
     res.status(201).json({ token, user: user.toJSON() });
   })
 );
