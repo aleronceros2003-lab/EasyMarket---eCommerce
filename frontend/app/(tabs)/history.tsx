@@ -19,9 +19,11 @@ import { Order, OrderStatus, ordersApi } from '../../services/api';
 import { ORDER_STATUS_LABELS, formatDate, formatMoney } from '../../utils/format';
 
 const STATUS_CONFIG: Record<OrderStatus, { colors: string[]; icon: React.ComponentProps<typeof Ionicons>['name']; bg: string }> = {
-  preparing:  { colors: ['#D97706', '#F59E0B'], icon: 'cube-outline',         bg: '#FFFBEB' },
-  on_the_way: { colors: ['#0284C7', '#38BDF8'], icon: 'bicycle-outline',      bg: '#EFF6FF' },
-  delivered:  { colors: ['#059669', '#34D399'], icon: 'checkmark-done-circle', bg: '#ECFDF5' },
+  preparing:  { colors: ['#D97706', '#F59E0B'], icon: 'cube-outline',          bg: '#FFFBEB' },
+  on_the_way: { colors: ['#0284C7', '#38BDF8'], icon: 'bicycle-outline',       bg: '#EFF6FF' },
+  at_door:    { colors: ['#7C3AED', '#A78BFA'], icon: 'home-outline',           bg: '#F5F3FF' },
+  delivered:  { colors: ['#059669', '#34D399'], icon: 'checkmark-circle-outline', bg: '#ECFDF5' },
+  finalized:  { colors: ['#047857', '#10B981'], icon: 'checkmark-done',         bg: '#D1FAE5' },
 };
 
 function OrderCard({ item, onPress }: { item: Order; onPress: () => void }) {
