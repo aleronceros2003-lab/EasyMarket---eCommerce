@@ -22,6 +22,7 @@ import { Colors, Gradients } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
 import {
   AdminStats,
+  ComplaintWithUser,
   Order,
   OrderStatus,
   Product,
@@ -30,10 +31,12 @@ import {
 } from '../../services/api';
 import { ORDER_STATUS_LABELS, formatDate, formatMoney } from '../../utils/format';
 
+type AdminTab = 'stats' | 'orders' | 'products' | 'users' | 'complaints';
+
 export default function AdminScreen() {
   const { user } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'stats' | 'orders' | 'products' | 'users'>('stats');
+  const [activeTab, setActiveTab] = useState<AdminTab>('stats');
 
   if (!user) {
     return (
@@ -57,12 +60,13 @@ export default function AdminScreen() {
     );
   }
 
-  const tabDefs = [
+  const tabDefs: { id: AdminTab; label: string; icon: string }[] = [
     { id: 'stats', label: 'Resumen', icon: 'bar-chart-outline' },
     { id: 'orders', label: 'Pedidos', icon: 'receipt-outline' },
     { id: 'products', label: 'Productos', icon: 'cube-outline' },
     { id: 'users', label: 'Usuarios', icon: 'people-outline' },
-  ] as const;
+    { id: 'complaints', label: 'Reclamos', icon: 'alert-circle-outline' },
+  ];
 
   return (
     <View style={styles.container}>
@@ -91,6 +95,7 @@ export default function AdminScreen() {
       {activeTab === 'orders' && <OrdersTab />}
       {activeTab === 'products' && <ProductsTab />}
       {activeTab === 'users' && <UsersTab />}
+      {activeTab === 'complaints' && <ComplaintsTab />}
     </View>
   );
 }
@@ -160,19 +165,34 @@ function StatsTab() {
 }
 
 // ─── Orders Tab ───────────────────────────────────────────────────────────────
-const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus>> = {
-  preparing: 'on_the_way',
-  on_the_way: 'delivered',
-};
-const STATUS_BG: Record<OrderStatus, string> = {
+const STATUS_BG: Record<string, string> = {
   preparing: '#FFFBEB',
   on_the_way: '#EFF6FF',
+  at_door: '#F5F3FF',
   delivered: '#ECFDF5',
+  finalized: '#D1FAE5',
 };
-const STATUS_COLOR: Record<OrderStatus, string> = {
+const STATUS_COLOR: Record<string, string> = {
   preparing: Colors.warning,
   on_the_way: Colors.statusOnTheWay,
+  at_door: '#7C3AED',
   delivered: Colors.secondary,
+  finalized: '#047857',
+};
+
+// Secuencia lineal para el botón "Avanzar"
+const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus>> = {
+  preparing: 'on_the_way',
+  on_the_way: 'at_door',
+  at_door: 'delivered',
+  delivered: 'finalized',
+};
+
+const STATUS_NEXT_LABEL: Partial<Record<OrderStatus, string>> = {
+  preparing: 'En camino',
+  on_the_way: 'En domicilio',
+  at_door: 'Marcar entregado',
+  delivered: 'Finalizar',
 };
 
 function OrdersTab() {
@@ -180,6 +200,7 @@ function OrdersTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [advancing, setAdvancing] = useState<string | null>(null);
+  const [finalizing, setFinalizing] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     try { setOrders((await adminApi.getOrders()).orders); }
@@ -203,6 +224,29 @@ function OrdersTab() {
     }
   };
 
+  const handleFinalize = (order: Order) => {
+    Alert.alert(
+      'Finalizar pedido',
+      `¿Confirmas que el pedido #${order.id.slice(0, 8).toUpperCase()} fue entregado al cliente?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Finalizar', onPress: async () => {
+            try {
+              setFinalizing(order.id);
+              const updated = await adminApi.updateOrderStatus(order.id, 'finalized');
+              setOrders((prev) => prev.map((o) => o.id === order.id ? updated : o));
+            } catch (e: unknown) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo finalizar');
+            } finally {
+              setFinalizing(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) return <View style={styles.centered}><ActivityIndicator size="large" color={Colors.primary} /></View>;
 
   return (
@@ -216,25 +260,39 @@ function OrdersTab() {
           <View style={{ flex: 1 }}>
             <Text style={styles.orderId}>#{item.id.slice(0, 8).toUpperCase()}</Text>
             <Text style={styles.orderDate}>{formatDate(item.createdAt)}</Text>
-            <View style={[styles.statusPill, { backgroundColor: STATUS_BG[item.status] }]}>
-              <Text style={[styles.statusPillText, { color: STATUS_COLOR[item.status] }]}>
-                {ORDER_STATUS_LABELS[item.status]}
+            <View style={[styles.statusPill, { backgroundColor: STATUS_BG[item.status] ?? '#F3F4F6' }]}>
+              <Text style={[styles.statusPillText, { color: STATUS_COLOR[item.status] ?? Colors.textMuted }]}>
+                {ORDER_STATUS_LABELS[item.status] ?? item.status}
               </Text>
             </View>
           </View>
-          <View style={{ alignItems: 'flex-end', gap: 8 }}>
+          <View style={{ alignItems: 'flex-end', gap: 6 }}>
             <Text style={styles.orderTotal}>{formatMoney(item.total)}</Text>
-            {STATUS_NEXT[item.status] && (
-              <TouchableOpacity
-                style={styles.advanceBtn}
-                onPress={() => handleAdvance(item)}
-                disabled={advancing === item.id}
-              >
-                {advancing === item.id
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={styles.advanceBtnText}>Avanzar →</Text>
-                }
-              </TouchableOpacity>
+            {item.status !== 'finalized' && (
+              <>
+                {STATUS_NEXT[item.status] && (
+                  <TouchableOpacity
+                    style={styles.advanceBtn}
+                    onPress={() => handleAdvance(item)}
+                    disabled={advancing === item.id || finalizing === item.id}
+                  >
+                    {advancing === item.id
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={styles.advanceBtnText}>{STATUS_NEXT_LABEL[item.status]} →</Text>
+                    }
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.finalizeBtn}
+                  onPress={() => handleFinalize(item)}
+                  disabled={advancing === item.id || finalizing === item.id}
+                >
+                  {finalizing === item.id
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.finalizeBtnText}>FINALIZAR</Text>
+                  }
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </View>
@@ -427,6 +485,152 @@ function UsersTab() {
   );
 }
 
+// ─── Complaints Tab ───────────────────────────────────────────────────────────
+const COMPLAINT_STATUS_LABEL: Record<string, string> = {
+  pending: 'Pendiente',
+  valid: 'Válido',
+  invalid: 'Inválido',
+};
+const COMPLAINT_STATUS_COLOR: Record<string, string> = {
+  pending: Colors.warning,
+  valid: Colors.secondary,
+  invalid: Colors.danger,
+};
+
+function ComplaintsTab() {
+  const [complaints, setComplaints] = useState<ComplaintWithUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<'pending' | 'valid' | 'invalid'>('pending');
+  const [resolving, setResolving] = useState<string | null>(null);
+
+  const fetchComplaints = useCallback(async () => {
+    try { setComplaints((await adminApi.getComplaints({ status: filter })).orders); }
+    catch { setComplaints([]); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, [filter]);
+
+  useEffect(() => { setLoading(true); fetchComplaints(); }, [fetchComplaints]);
+
+  const handleResolve = (orderId: string, status: 'valid' | 'invalid') => {
+    const label = status === 'valid' ? 'válido' : 'inválido';
+    Alert.alert(
+      'Resolver reclamo',
+      `¿Marcar este reclamo como ${label}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar', onPress: async () => {
+            try {
+              setResolving(orderId);
+              await adminApi.resolveComplaint(orderId, status);
+              setComplaints((prev) => prev.filter((c) => c.id !== orderId));
+            } catch (e: unknown) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo resolver');
+            } finally {
+              setResolving(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const filterTabs: { key: typeof filter; label: string }[] = [
+    { key: 'pending', label: 'Pendientes' },
+    { key: 'valid', label: 'Válidos' },
+    { key: 'invalid', label: 'Inválidos' },
+  ];
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.filterRow}>
+        {filterTabs.map((f) => (
+          <TouchableOpacity
+            key={f.key}
+            style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
+            onPress={() => setFilter(f.key)}
+          >
+            <Text style={[styles.filterChipText, filter === f.key && styles.filterChipTextActive]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {loading ? (
+        <View style={styles.centered}><ActivityIndicator size="large" color={Colors.primary} /></View>
+      ) : (
+        <FlatList
+          data={complaints}
+          keyExtractor={(c) => c.id}
+          contentContainerStyle={styles.tabContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchComplaints(); }} tintColor={Colors.primary} />}
+          renderItem={({ item }) => (
+            <View style={styles.complaintCard}>
+              <View style={styles.complaintHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.complaintOrderId}>#{item.id.slice(0, 8).toUpperCase()}</Text>
+                  <Text style={styles.complaintUser}>
+                    {item.user?.name ?? 'Usuario desconocido'} · {item.user?.email ?? '—'}
+                  </Text>
+                </View>
+                <View style={[styles.statusPill, { backgroundColor: `${COMPLAINT_STATUS_COLOR[item.complaint?.status ?? 'pending']}15` }]}>
+                  <Text style={[styles.statusPillText, { color: COMPLAINT_STATUS_COLOR[item.complaint?.status ?? 'pending'] }]}>
+                    {COMPLAINT_STATUS_LABEL[item.complaint?.status ?? 'pending']}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.complaintOrderStatus}>
+                <Text style={styles.complaintOrderStatusLabel}>Estado del pedido:</Text>
+                <Text style={[styles.complaintOrderStatusValue, { color: STATUS_COLOR[item.status] ?? Colors.textMuted }]}>
+                  {ORDER_STATUS_LABELS[item.status] ?? item.status}
+                </Text>
+              </View>
+
+              <Text style={styles.complaintText}>{item.complaint?.text ?? ''}</Text>
+
+              {item.complaint?.status === 'pending' && (
+                <View style={styles.complaintActions}>
+                  <TouchableOpacity
+                    style={[styles.resolveBtn, { backgroundColor: '#FEF2F2' }]}
+                    onPress={() => handleResolve(item.id, 'invalid')}
+                    disabled={resolving === item.id}
+                  >
+                    {resolving === item.id
+                      ? <ActivityIndicator size="small" color={Colors.danger} />
+                      : <Text style={[styles.resolveBtnText, { color: Colors.danger }]}>Inválido</Text>
+                    }
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.resolveBtn, { backgroundColor: '#F0FDF4' }]}
+                    onPress={() => handleResolve(item.id, 'valid')}
+                    disabled={resolving === item.id}
+                  >
+                    {resolving === item.id
+                      ? <ActivityIndicator size="small" color={Colors.secondary} />
+                      : <Text style={[styles.resolveBtnText, { color: Colors.secondary }]}>Válido</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={styles.centered}>
+              <Ionicons name="checkmark-circle-outline" size={48} color={Colors.border} />
+              <Text style={[styles.errorSubtitle, { marginTop: 12 }]}>
+                Sin reclamos {filter === 'pending' ? 'pendientes' : filter === 'valid' ? 'válidos' : 'inválidos'}
+              </Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
@@ -472,7 +676,9 @@ const styles = StyleSheet.create({
   statusPillText: { fontSize: 12, fontWeight: '700' },
   orderTotal: { fontSize: 16, fontWeight: '800', color: Colors.primary },
   advanceBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
-  advanceBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  advanceBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  finalizeBtn: { backgroundColor: '#047857', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  finalizeBtnText: { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   addBtn: { borderRadius: 14, overflow: 'hidden', marginBottom: 4 },
   addBtnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14 },
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
@@ -493,4 +699,24 @@ const styles = StyleSheet.create({
   userName: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
   userEmail: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
   userRole: { fontSize: 12, fontWeight: '600', marginTop: 3 },
+  // Complaints
+  filterRow: { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: Colors.border },
+  filterChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + '20' },
+  filterChipText: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
+  filterChipTextActive: { color: Colors.primary },
+  complaintCard: {
+    backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    borderLeftWidth: 4, borderLeftColor: Colors.warning,
+  },
+  complaintHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  complaintOrderId: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary },
+  complaintUser: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  complaintOrderStatus: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  complaintOrderStatusLabel: { fontSize: 12, color: Colors.textMuted },
+  complaintOrderStatusValue: { fontSize: 12, fontWeight: '700' },
+  complaintText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20, backgroundColor: Colors.borderLight, borderRadius: 10, padding: 12 },
+  complaintActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  resolveBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
+  resolveBtnText: { fontSize: 13, fontWeight: '800' },
 });

@@ -1,13 +1,13 @@
-import { OrderStatus } from '../services/api';
-
-export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  preparing: 'Preparando',
+export const ORDER_STATUS_LABELS: Record<string, string> = {
+  preparing: 'En almacÃ©n',
   on_the_way: 'En camino',
+  at_door: 'En domicilio',
   delivered: 'Entregado',
+  finalized: 'Finalizado',
 };
 
 export const PAYMENT_LABELS: Record<string, string> = {
-  cash: 'Efectivo al entregar',
+  cash_on_delivery: 'Efectivo al entregar',
   card: 'Tarjeta',
 };
 
