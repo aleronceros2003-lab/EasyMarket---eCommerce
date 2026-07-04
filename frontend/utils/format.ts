@@ -1,5 +1,5 @@
 export const ORDER_STATUS_LABELS: Record<string, string> = {
-  preparing: 'En almacén',
+  preparing: 'En almacÃ©n',
   on_the_way: 'En camino',
   at_door: 'En domicilio',
   delivered: 'Entregado',

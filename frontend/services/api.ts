@@ -190,7 +190,7 @@ export const ordersApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Reseñas
+// ReseÃ±as
 // ---------------------------------------------------------------------------
 export const reviewsApi = {
   create: (payload: ReviewPayload) => request<Review>('POST', '/reviews', payload, true),
