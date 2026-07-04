@@ -26,12 +26,22 @@ const statusEntrySchema = new Schema(
   { _id: false }
 );
 
+const complaintMessageSchema = new Schema(
+  {
+    sender: { type: String, enum: ['user', 'admin'], required: true },
+    text: { type: String, required: true },
+    sentAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const complaintSchema = new Schema(
   {
     text: { type: String, required: true },
     status: { type: String, enum: ['pending', 'valid', 'invalid'], default: 'pending' },
     submittedAt: { type: Date, default: Date.now },
     resolvedAt: { type: Date, default: null },
+    messages: { type: [complaintMessageSchema], default: [] },
   },
   { _id: false }
 );

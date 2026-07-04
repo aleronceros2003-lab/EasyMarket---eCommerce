@@ -22,6 +22,7 @@ import { Colors, Gradients } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
 import {
   AdminStats,
+  ComplaintMessage,
   ComplaintWithUser,
   Order,
   OrderStatus,
@@ -497,6 +498,126 @@ const COMPLAINT_STATUS_COLOR: Record<string, string> = {
   invalid: Colors.danger,
 };
 
+function ComplaintCard({
+  item,
+  onResolve,
+  onMessageSent,
+}: {
+  item: ComplaintWithUser;
+  onResolve: (id: string, status: 'valid' | 'invalid') => void;
+  onMessageSent: (updated: ComplaintWithUser) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [chatText, setChatText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async () => {
+    if (!chatText.trim()) return;
+    try {
+      setSending(true);
+      const updated = await adminApi.sendComplaintMessage(item.id, chatText.trim());
+      setChatText('');
+      onMessageSent(updated as ComplaintWithUser);
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo enviar');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const messages = item.complaint?.messages ?? [];
+
+  return (
+    <View style={styles.complaintCard}>
+      {/* Header */}
+      <TouchableOpacity style={styles.complaintHeader} onPress={() => setExpanded((v) => !v)} activeOpacity={0.7}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.complaintOrderId}>#{item.id.slice(0, 8).toUpperCase()}</Text>
+          <Text style={styles.complaintUser}>
+            {item.user?.name ?? 'Usuario desconocido'} · {item.user?.email ?? '—'}
+          </Text>
+        </View>
+        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+          <View style={[styles.statusPill, { backgroundColor: `${COMPLAINT_STATUS_COLOR[item.complaint?.status ?? 'pending']}18` }]}>
+            <Text style={[styles.statusPillText, { color: COMPLAINT_STATUS_COLOR[item.complaint?.status ?? 'pending'] }]}>
+              {COMPLAINT_STATUS_LABEL[item.complaint?.status ?? 'pending']}
+            </Text>
+          </View>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textMuted} />
+        </View>
+      </TouchableOpacity>
+
+      <View style={styles.complaintOrderStatus}>
+        <Text style={styles.complaintOrderStatusLabel}>Pedido:</Text>
+        <Text style={[styles.complaintOrderStatusValue, { color: STATUS_COLOR[item.status] ?? Colors.textMuted }]}>
+          {ORDER_STATUS_LABELS[item.status] ?? item.status}
+        </Text>
+      </View>
+
+      {expanded && (
+        <>
+          {/* Hilo de mensajes */}
+          <View style={styles.chatThread}>
+            {messages.map((msg: ComplaintMessage, idx: number) => (
+              <View key={idx} style={[styles.bubble, msg.sender === 'admin' ? styles.bubbleAdmin : styles.bubbleUser]}>
+                <Text style={[styles.bubbleSender, msg.sender === 'admin' ? styles.bubbleSenderAdmin : styles.bubbleSenderUser]}>
+                  {msg.sender === 'admin' ? 'Tú (Admin)' : item.user?.name ?? 'Cliente'}
+                </Text>
+                <Text style={[styles.bubbleText, msg.sender === 'admin' ? styles.bubbleTextAdmin : styles.bubbleTextUser]}>
+                  {msg.text}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Input de respuesta del admin */}
+          {item.complaint?.status === 'pending' && (
+            <View style={styles.chatInputRow}>
+              <TextInput
+                style={styles.chatInput}
+                placeholder="Responder al cliente..."
+                placeholderTextColor={Colors.textMuted}
+                value={chatText}
+                onChangeText={setChatText}
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity
+                style={[styles.chatSendBtn, !chatText.trim() && styles.chatSendBtnDisabled]}
+                onPress={handleSend}
+                disabled={!chatText.trim() || sending}
+              >
+                {sending
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="send" size={16} color="#fff" />
+                }
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Botones de resolución */}
+          {item.complaint?.status === 'pending' && (
+            <View style={styles.complaintActions}>
+              <TouchableOpacity
+                style={[styles.resolveBtn, { backgroundColor: '#FEF2F2' }]}
+                onPress={() => onResolve(item.id, 'invalid')}
+              >
+                <Text style={[styles.resolveBtnText, { color: Colors.danger }]}>Marcar inválido</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.resolveBtn, { backgroundColor: '#F0FDF4' }]}
+                onPress={() => onResolve(item.id, 'valid')}
+              >
+                <Text style={[styles.resolveBtnText, { color: Colors.secondary }]}>Marcar válido</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
 function ComplaintsTab() {
   const [complaints, setComplaints] = useState<ComplaintWithUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -514,26 +635,26 @@ function ComplaintsTab() {
 
   const handleResolve = (orderId: string, status: 'valid' | 'invalid') => {
     const label = status === 'valid' ? 'válido' : 'inválido';
-    Alert.alert(
-      'Resolver reclamo',
-      `¿Marcar este reclamo como ${label}?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmar', onPress: async () => {
-            try {
-              setResolving(orderId);
-              await adminApi.resolveComplaint(orderId, status);
-              setComplaints((prev) => prev.filter((c) => c.id !== orderId));
-            } catch (e: unknown) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo resolver');
-            } finally {
-              setResolving(null);
-            }
-          },
+    Alert.alert('Resolver reclamo', `¿Marcar este reclamo como ${label}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar', onPress: async () => {
+          try {
+            setResolving(orderId);
+            await adminApi.resolveComplaint(orderId, status);
+            setComplaints((prev) => prev.filter((c) => c.id !== orderId));
+          } catch (e: unknown) {
+            Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo resolver');
+          } finally {
+            setResolving(null);
+          }
         },
-      ]
-    );
+      },
+    ]);
+  };
+
+  const handleMessageSent = (updated: ComplaintWithUser) => {
+    setComplaints((prev) => prev.map((c) => c.id === updated.id ? { ...updated, user: c.user } : c));
   };
 
   const filterTabs: { key: typeof filter; label: string }[] = [
@@ -551,9 +672,7 @@ function ComplaintsTab() {
             style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
             onPress={() => setFilter(f.key)}
           >
-            <Text style={[styles.filterChipText, filter === f.key && styles.filterChipTextActive]}>
-              {f.label}
-            </Text>
+            <Text style={[styles.filterChipText, filter === f.key && styles.filterChipTextActive]}>{f.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -567,55 +686,11 @@ function ComplaintsTab() {
           contentContainerStyle={styles.tabContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchComplaints(); }} tintColor={Colors.primary} />}
           renderItem={({ item }) => (
-            <View style={styles.complaintCard}>
-              <View style={styles.complaintHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.complaintOrderId}>#{item.id.slice(0, 8).toUpperCase()}</Text>
-                  <Text style={styles.complaintUser}>
-                    {item.user?.name ?? 'Usuario desconocido'} · {item.user?.email ?? '—'}
-                  </Text>
-                </View>
-                <View style={[styles.statusPill, { backgroundColor: `${COMPLAINT_STATUS_COLOR[item.complaint?.status ?? 'pending']}15` }]}>
-                  <Text style={[styles.statusPillText, { color: COMPLAINT_STATUS_COLOR[item.complaint?.status ?? 'pending'] }]}>
-                    {COMPLAINT_STATUS_LABEL[item.complaint?.status ?? 'pending']}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.complaintOrderStatus}>
-                <Text style={styles.complaintOrderStatusLabel}>Estado del pedido:</Text>
-                <Text style={[styles.complaintOrderStatusValue, { color: STATUS_COLOR[item.status] ?? Colors.textMuted }]}>
-                  {ORDER_STATUS_LABELS[item.status] ?? item.status}
-                </Text>
-              </View>
-
-              <Text style={styles.complaintText}>{item.complaint?.text ?? ''}</Text>
-
-              {item.complaint?.status === 'pending' && (
-                <View style={styles.complaintActions}>
-                  <TouchableOpacity
-                    style={[styles.resolveBtn, { backgroundColor: '#FEF2F2' }]}
-                    onPress={() => handleResolve(item.id, 'invalid')}
-                    disabled={resolving === item.id}
-                  >
-                    {resolving === item.id
-                      ? <ActivityIndicator size="small" color={Colors.danger} />
-                      : <Text style={[styles.resolveBtnText, { color: Colors.danger }]}>Inválido</Text>
-                    }
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.resolveBtn, { backgroundColor: '#F0FDF4' }]}
-                    onPress={() => handleResolve(item.id, 'valid')}
-                    disabled={resolving === item.id}
-                  >
-                    {resolving === item.id
-                      ? <ActivityIndicator size="small" color={Colors.secondary} />
-                      : <Text style={[styles.resolveBtnText, { color: Colors.secondary }]}>Válido</Text>
-                    }
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+            <ComplaintCard
+              item={item}
+              onResolve={handleResolve}
+              onMessageSent={handleMessageSent}
+            />
           )}
           ListEmptyComponent={
             <View style={styles.centered}>
@@ -716,7 +791,26 @@ const styles = StyleSheet.create({
   complaintOrderStatusLabel: { fontSize: 12, color: Colors.textMuted },
   complaintOrderStatusValue: { fontSize: 12, fontWeight: '700' },
   complaintText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20, backgroundColor: Colors.borderLight, borderRadius: 10, padding: 12 },
-  complaintActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  complaintActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   resolveBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   resolveBtnText: { fontSize: 13, fontWeight: '800' },
+  // Chat
+  chatThread: { gap: 8, marginBottom: 8 },
+  bubble: { maxWidth: '82%', borderRadius: 14, padding: 10 },
+  bubbleAdmin: { alignSelf: 'flex-end', backgroundColor: Colors.primary, borderBottomRightRadius: 4 },
+  bubbleUser: { alignSelf: 'flex-start', backgroundColor: Colors.borderLight, borderBottomLeftRadius: 4 },
+  bubbleSender: { fontSize: 9, fontWeight: '700', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.4 },
+  bubbleSenderAdmin: { color: 'rgba(255,255,255,0.7)' },
+  bubbleSenderUser: { color: Colors.textMuted },
+  bubbleText: { fontSize: 13, lineHeight: 18 },
+  bubbleTextAdmin: { color: '#fff' },
+  bubbleTextUser: { color: Colors.textPrimary },
+  chatInputRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-end', marginBottom: 8 },
+  chatInput: {
+    flex: 1, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: Colors.textPrimary,
+    maxHeight: 80, textAlignVertical: 'top',
+  },
+  chatSendBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  chatSendBtnDisabled: { backgroundColor: Colors.border },
 });

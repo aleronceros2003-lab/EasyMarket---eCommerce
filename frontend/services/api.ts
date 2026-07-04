@@ -162,6 +162,8 @@ export const ordersApi = {
   getOrder: (id: string) => request<Order>('GET', `/orders/${id}`, undefined, true),
   submitComplaint: (id: string, text: string) =>
     request<Order>('POST', `/orders/${id}/complaint`, { text }, true),
+  sendComplaintMessage: (id: string, text: string) =>
+    request<Order>('POST', `/orders/${id}/complaint/message`, { text }, true),
   downloadReceipt: async (orderId: string): Promise<string | void> => {
     const token = await getToken();
     const url = `${API_BASE}/orders/${orderId}/receipt`;
@@ -352,11 +354,18 @@ export interface OrderStatusEntry {
   at: string;
 }
 
+export interface ComplaintMessage {
+  sender: 'user' | 'admin';
+  text: string;
+  sentAt: string;
+}
+
 export interface OrderComplaint {
   text: string;
   status: ComplaintStatus;
   submittedAt: string;
   resolvedAt: string | null;
+  messages: ComplaintMessage[];
 }
 
 export interface Order {
@@ -464,6 +473,8 @@ export const adminApi = {
   },
   resolveComplaint: (orderId: string, status: 'valid' | 'invalid') =>
     request<Order>('PATCH', `/admin/complaints/${orderId}`, { status }, true),
+  sendComplaintMessage: (orderId: string, text: string) =>
+    request<Order>('POST', `/admin/complaints/${orderId}/message`, { text }, true),
 };
 
 // ---------------------------------------------------------------------------

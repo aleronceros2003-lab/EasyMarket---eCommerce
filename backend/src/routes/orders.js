@@ -159,9 +159,32 @@ router.post(
     const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
     if (!order) throw ApiError.notFound('Pedido no encontrado');
     if (order.complaint) throw ApiError.badRequest('Ya existe un reclamo para este pedido');
-    order.complaint = { text: text.trim(), status: 'pending', submittedAt: new Date() };
+    const now = new Date();
+    order.complaint = {
+      text: text.trim(),
+      status: 'pending',
+      submittedAt: now,
+      messages: [{ sender: 'user', text: text.trim(), sentAt: now }],
+    };
     await order.save();
     res.status(201).json(order.toJSON());
+  })
+);
+
+// POST /api/orders/:id/complaint/message
+router.post(
+  '/:id/complaint/message',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { text } = req.body;
+    if (!text?.trim()) throw ApiError.badRequest('El mensaje no puede estar vacío');
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!order) throw ApiError.notFound('Pedido no encontrado');
+    if (!order.complaint) throw ApiError.badRequest('Este pedido no tiene un reclamo abierto');
+    if (order.complaint.status !== 'pending') throw ApiError.badRequest('El reclamo ya fue resuelto');
+    order.complaint.messages.push({ sender: 'user', text: text.trim(), sentAt: new Date() });
+    await order.save();
+    res.json(order.toJSON());
   })
 );
 

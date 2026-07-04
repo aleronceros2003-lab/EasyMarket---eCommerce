@@ -16,7 +16,7 @@ import {
 import { Button } from '../../components/Button';
 import { StarRating } from '../../components/StarRating';
 import { Colors, Gradients } from '../../constants/Colors';
-import { Order, OrderStatus, ordersApi, reviewsApi } from '../../services/api';
+import { Order, OrderStatus, ordersApi, reviewsApi, ComplaintMessage } from '../../services/api';
 import {
   DELIVERY_LABELS, ORDER_STATUS_LABELS, PAYMENT_LABELS,
   formatDateTime, formatMoney,
@@ -54,6 +54,8 @@ export default function OrderDetailScreen() {
   const [complaintText, setComplaintText] = useState('');
   const [submittingComplaint, setSubmittingComplaint] = useState(false);
   const [showComplaintForm, setShowComplaintForm] = useState(false);
+  const [chatMessage, setChatMessage] = useState('');
+  const [sendingChat, setSendingChat] = useState(false);
 
   const loadOrder = () => {
     ordersApi.getOrder(id)
@@ -105,6 +107,20 @@ export default function OrderDetailScreen() {
       Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo enviar el reclamo');
     } finally {
       setSubmittingComplaint(false);
+    }
+  };
+
+  const handleSendChatMessage = async () => {
+    if (!order || !chatMessage.trim()) return;
+    try {
+      setSendingChat(true);
+      const updated = await ordersApi.sendComplaintMessage(order.id, chatMessage.trim());
+      setOrder(updated);
+      setChatMessage('');
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo enviar');
+    } finally {
+      setSendingChat(false);
     }
   };
 
@@ -289,11 +305,7 @@ export default function OrderDetailScreen() {
           >
             <Ionicons name="alert-circle-outline" size={20} color={Colors.warning} />
             <Text style={styles.complaintToggleText}>¿No recibiste tu producto?</Text>
-            <Ionicons
-              name={showComplaintForm ? 'chevron-up' : 'chevron-down'}
-              size={18}
-              color={Colors.textMuted}
-            />
+            <Ionicons name={showComplaintForm ? 'chevron-up' : 'chevron-down'} size={18} color={Colors.textMuted} />
           </TouchableOpacity>
 
           {showComplaintForm && (
@@ -303,8 +315,7 @@ export default function OrderDetailScreen() {
                 nombre del producto, para que el almacén lo supervise lo más pronto posible.
               </Text>
               <Text style={styles.complaintOrderRef}>
-                Orden: #{order.id.slice(0, 8).toUpperCase()} ·{' '}
-                {order.items.map((i) => i.name).join(', ')}
+                Orden: #{order.id.slice(0, 8).toUpperCase()} · {order.items.map((i) => i.name).join(', ')}
               </Text>
               <TextInput
                 style={styles.commentInput}
@@ -327,26 +338,59 @@ export default function OrderDetailScreen() {
         </View>
       )}
 
+      {/* Mini-chat del reclamo */}
       {order.complaint && (
-        <View style={[styles.card, styles.complaintSentCard]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <View style={[styles.card, styles.chatCard]}>
+          {/* Header */}
+          <View style={styles.chatHeader}>
             <Ionicons
-              name={
-                order.complaint.status === 'valid' ? 'checkmark-circle' :
-                order.complaint.status === 'invalid' ? 'close-circle' : 'time-outline'
-              }
-              size={20}
-              color={
-                order.complaint.status === 'valid' ? Colors.secondary :
-                order.complaint.status === 'invalid' ? Colors.danger : Colors.warning
-              }
+              name={order.complaint.status === 'valid' ? 'checkmark-circle' : order.complaint.status === 'invalid' ? 'close-circle' : 'chatbubbles-outline'}
+              size={18}
+              color={order.complaint.status === 'valid' ? Colors.secondary : order.complaint.status === 'invalid' ? Colors.danger : Colors.warning}
             />
-            <Text style={styles.complaintSentTitle}>
-              Reclamo {order.complaint.status === 'pending' ? 'en revisión' :
-                order.complaint.status === 'valid' ? 'validado' : 'revisado'}
+            <Text style={styles.chatTitle}>
+              Reclamo · {order.complaint.status === 'pending' ? 'En revisión' : order.complaint.status === 'valid' ? 'Validado' : 'Revisado'}
             </Text>
           </View>
-          <Text style={styles.complaintSentText}>{order.complaint.text}</Text>
+
+          {/* Mensajes */}
+          <View style={styles.chatThread}>
+            {(order.complaint.messages ?? []).map((msg: ComplaintMessage, idx: number) => (
+              <View key={idx} style={[styles.bubble, msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAdmin]}>
+                <Text style={[styles.bubbleSender, msg.sender === 'user' ? styles.bubbleSenderUser : styles.bubbleSenderAdmin]}>
+                  {msg.sender === 'user' ? 'Tú' : 'EasyMarket'}
+                </Text>
+                <Text style={[styles.bubbleText, msg.sender === 'user' ? styles.bubbleTextUser : styles.bubbleTextAdmin]}>
+                  {msg.text}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Input de respuesta (solo si sigue pendiente) */}
+          {order.complaint.status === 'pending' && (
+            <View style={styles.chatInputRow}>
+              <TextInput
+                style={styles.chatInput}
+                placeholder="Escribe una respuesta..."
+                placeholderTextColor={Colors.textMuted}
+                value={chatMessage}
+                onChangeText={setChatMessage}
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity
+                style={[styles.chatSendBtn, !chatMessage.trim() && styles.chatSendBtnDisabled]}
+                onPress={handleSendChatMessage}
+                disabled={!chatMessage.trim() || sendingChat}
+              >
+                {sendingChat
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="send" size={18} color="#fff" />
+                }
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -455,7 +499,29 @@ const styles = StyleSheet.create({
     fontSize: 12, color: Colors.textMuted, marginTop: 6, marginBottom: 4,
     fontStyle: 'italic',
   },
-  complaintSentCard: { borderLeftWidth: 4, borderLeftColor: Colors.warning },
-  complaintSentTitle: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
-  complaintSentText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  // Chat de reclamo
+  chatCard: { borderLeftWidth: 4, borderLeftColor: Colors.warning, gap: 12 },
+  chatHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chatTitle: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary },
+  chatThread: { gap: 8 },
+  bubble: { maxWidth: '82%', borderRadius: 16, padding: 12 },
+  bubbleUser: { alignSelf: 'flex-end', backgroundColor: Colors.primary, borderBottomRightRadius: 4 },
+  bubbleAdmin: { alignSelf: 'flex-start', backgroundColor: Colors.borderLight, borderBottomLeftRadius: 4 },
+  bubbleSender: { fontSize: 10, fontWeight: '700', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.5 },
+  bubbleSenderUser: { color: 'rgba(255,255,255,0.75)' },
+  bubbleSenderAdmin: { color: Colors.textMuted },
+  bubbleText: { fontSize: 14, lineHeight: 20 },
+  bubbleTextUser: { color: '#fff' },
+  bubbleTextAdmin: { color: Colors.textPrimary },
+  chatInputRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-end' },
+  chatInput: {
+    flex: 1, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: Colors.textPrimary,
+    maxHeight: 100, textAlignVertical: 'top',
+  },
+  chatSendBtn: {
+    width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  chatSendBtnDisabled: { backgroundColor: Colors.border },
 });

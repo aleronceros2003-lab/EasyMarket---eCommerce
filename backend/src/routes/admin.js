@@ -250,6 +250,29 @@ router.get(
   })
 );
 
+// POST /api/admin/complaints/:orderId/message
+router.post(
+  '/complaints/:orderId/message',
+  adminAuth,
+  asyncHandler(async (req, res) => {
+    const { text } = req.body;
+    if (!text?.trim()) throw ApiError.badRequest('El mensaje no puede estar vacío');
+    const order = await Order.findById(req.params.orderId);
+    if (!order) throw ApiError.notFound('Pedido no encontrado');
+    if (!order.complaint) throw ApiError.badRequest('Este pedido no tiene un reclamo');
+    order.complaint.messages.push({ sender: 'admin', text: text.trim(), sentAt: new Date() });
+    await order.save();
+
+    // Notificar al usuario por push
+    const user = await User.findById(order.userId).select('pushToken');
+    if (user?.pushToken) {
+      sendPushNotification(user.pushToken, '💬 El equipo de EasyMarket respondió', text.trim().slice(0, 80), { orderId: order.id });
+    }
+
+    res.json(order.toJSON());
+  })
+);
+
 // PATCH /api/admin/complaints/:orderId
 router.patch(
   '/complaints/:orderId',
